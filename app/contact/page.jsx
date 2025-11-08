@@ -3,7 +3,7 @@ import NavbarClient from "@/components/NavbarClient"; // your existing navbar
 
 export default function ContactPage() {
   // Replace this with your actual Telegram username (no '@')
-  const telegramUsername = "BetGeniusAdmin";
+  const telegramUsername = "Geniuz PredictionAdmin";
 
   return (
     <div className="min-h-screen bg-[#0D1B57] text-white pt-20">
@@ -43,7 +43,7 @@ export default function ContactPage() {
             Office Address
           </h2>
           <p className="text-gray-200 leading-relaxed">
-            BetGenius HQ, 12 Innovation Street, Accra, Ghana
+            Geniuz Prediction HQ, 12 Innovation Street, Accra, Ghana
           </p>
         </section>
       </main>

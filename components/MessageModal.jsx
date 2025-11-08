@@ -18,7 +18,7 @@ export default function MessageModal({ show, message, onClose }) {
             className="relative bg-[#0E1D59]/90 border border-[#FFD601] text-white rounded-2xl shadow-[0_0_20px_#FFD60155] p-6 max-w-sm w-[90%] text-center"
           >
             <h2 className="text-2xl font-bold text-[#FFD601] mb-2">
-              BetGenius
+              Geniuz Prediction
             </h2>
             <p className="text-white/90 leading-relaxed mb-5">{message}</p>
 

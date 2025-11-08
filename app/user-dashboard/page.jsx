@@ -1,6 +1,6 @@
 "use client";
 /**
- * BetGenius — User Dashboard (App Router /user-dashboard)
+ * Geniuz Prediction — User Dashboard (App Router /user-dashboard)
  */
 import useLoading from "@/hooks/useLoading";
 import { safeSupabaseQuery } from "@/lib/apiHelpers";

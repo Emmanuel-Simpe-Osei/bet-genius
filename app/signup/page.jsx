@@ -327,8 +327,8 @@ export default function SignUpPage() {
 
         {/* 🇬🇭 Responsible Betting Notice */}
         <p className="text-white/60 text-xs mt-8 text-center leading-relaxed">
-          ⚠️ BetGenius is a registered business operating under Ghana’s Gaming
-          Commission guidelines. Betting can be addictive — please play
+          ⚠️ Geniuz Prediction is a registered business operating under Ghana’s
+          Gaming Commission guidelines. Betting can be addictive — please play
           responsibly. For help, contact the Gaming Commission Ghana helpline:
           0302 746 682.
         </p>

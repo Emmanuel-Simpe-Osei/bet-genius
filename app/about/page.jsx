@@ -10,13 +10,13 @@ export default function AboutPage() {
       <main className="max-w-5xl mx-auto px-6 py-12">
         {/* Page Title */}
         <h1 className="text-4xl font-bold mb-6 text-[#FFD700]">
-          About BetGenius
+          About Geniuz Prediction
         </h1>
 
         {/* Intro */}
         <p className="text-lg leading-relaxed mb-8 text-gray-100">
-          BetGenius is your trusted platform for football predictions, stats,
-          and insights. We bring accurate data analysis and intelligent
+          Geniuz Prediction is your trusted platform for football predictions,
+          stats, and insights. We bring accurate data analysis and intelligent
           algorithms together to give you the edge you need.
         </p>
 
@@ -52,7 +52,7 @@ export default function AboutPage() {
             Got questions or feedback? We’d love to hear from you.
           </p>
           <a
-            href="mailto:support@betgenius.com"
+            href="mailto:support@Geniuz Prediction.com"
             className="inline-block mt-4 bg-[#FFD700] text-[#0D1B57] font-semibold px-6 py-3 rounded-lg hover:bg-yellow-400 transition"
           >
             Email Support

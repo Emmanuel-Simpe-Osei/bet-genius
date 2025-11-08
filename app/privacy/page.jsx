@@ -25,8 +25,8 @@ export default function PrivacyPolicyPage() {
               1. Introduction
             </h2>
             <p className="text-white/80 leading-relaxed">
-              <strong>BetGenius</strong> is committed to safeguarding your
-              personal data under the{" "}
+              <strong>Geniuz Prediction</strong> is committed to safeguarding
+              your personal data under the{" "}
               <strong>Data Protection Act, 2012 (Act 843)</strong> of Ghana. We
               ensure transparency in how your information is collected, stored,
               and used.
@@ -62,7 +62,7 @@ export default function PrivacyPolicyPage() {
             <p className="text-white/80 leading-relaxed">
               We use encryption, secure authentication (Supabase), and trusted
               gateways (Paystack) to ensure your data remains private and safe.
-              BetGenius does not store your payment information.
+              Geniuz Prediction does not store your payment information.
             </p>
           </div>
 

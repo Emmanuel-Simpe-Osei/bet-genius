@@ -26,7 +26,7 @@ export default function UserDashboardNavbar() {
     >
       {/* Left: Logo */}
       <Link href="/" className="text-lg font-bold text-[#FFD601]">
-        BetGenius
+        Geniuz Prediction
       </Link>
 
       {/* Right: Buttons */}

@@ -135,7 +135,7 @@ export default function NavbarClient() {
         onClick={() => setMenuOpen(false)}
         className="text-[#FFD601] font-bold text-xl"
       >
-        ⚽ BetGenius
+        ⚽ Geniuz Prediction
       </Link>
 
       {/* 🔹 Desktop Links */}

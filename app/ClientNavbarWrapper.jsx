@@ -61,7 +61,7 @@ export default function ClientNavbarWrapper() {
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="text-2xl font-bold text-[#FFD601]">
-          BetGenius
+          Geniuz Prediction
         </Link>
 
         {/* Hamburger button (visible only on mobile) */}

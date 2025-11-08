@@ -26,7 +26,7 @@ export default function TermsPage() {
               1. Introduction
             </h2>
             <p className="text-white/80 leading-relaxed">
-              Welcome to <strong>BetGenius</strong> — an online sports
+              Welcome to <strong>Geniuz Prediction</strong> — an online sports
               prediction and entertainment platform operated in accordance with
               the laws of the Republic of Ghana and the Gaming Commission’s
               responsible gaming guidelines. By using this platform, you agree
@@ -40,7 +40,7 @@ export default function TermsPage() {
             </h2>
             <p className="text-white/80 leading-relaxed">
               You must be at least <strong>18 years old</strong> to create an
-              account and use BetGenius. Providing false or misleading
+              account and use Geniuz Prediction. Providing false or misleading
               information may result in account suspension or termination.
             </p>
           </div>
@@ -50,9 +50,9 @@ export default function TermsPage() {
               3. Responsible Gaming
             </h2>
             <p className="text-white/80 leading-relaxed">
-              BetGenius promotes responsible gaming. Please play within your
-              limits and avoid chasing losses. If you believe you have a gaming
-              problem, seek help from the{" "}
+              Geniuz Prediction promotes responsible gaming. Please play within
+              your limits and avoid chasing losses. If you believe you have a
+              gaming problem, seek help from the{" "}
               <strong>Gaming Commission of Ghana</strong> or any recognized
               counseling center.
             </p>
@@ -64,7 +64,7 @@ export default function TermsPage() {
             </h2>
             <p className="text-white/80 leading-relaxed">
               All transactions are processed securely through trusted providers
-              like Paystack. BetGenius does not store any credit card or
+              like Paystack. Geniuz Prediction does not store any credit card or
               sensitive payment information.
             </p>
           </div>
@@ -74,8 +74,8 @@ export default function TermsPage() {
               5. Predictions and Results
             </h2>
             <p className="text-white/80 leading-relaxed">
-              Predictions on BetGenius are based on data and insights for
-              entertainment and education only. We do not guarantee winning
+              Predictions on Geniuz Prediction are based on data and insights
+              for entertainment and education only. We do not guarantee winning
               outcomes.
             </p>
           </div>

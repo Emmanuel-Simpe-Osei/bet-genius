@@ -262,10 +262,10 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col md:flex-row justify-center gap-4 text-white/90">
             <a
-              href="mailto:support@betgenius.com"
+              href="mailto:support@Geniuz Prediction.com"
               className="hover:text-[#FFD601] transition"
             >
-              📧 support@betgenius.com
+              📧 support@Geniuz Prediction.com
             </a>
             <a
               href="https://t.me/Ozopgh"
@@ -279,7 +279,7 @@ export default function HomePage() {
       </section>
 
       <footer className="py-6 border-t border-[#FFD601]/20 text-center text-white/70 text-sm w-full">
-        © {new Date().getFullYear()} BetGenius. All rights reserved.
+        © {new Date().getFullYear()} Geniuz Prediction. All rights reserved.
       </footer>
     </div>
   );
