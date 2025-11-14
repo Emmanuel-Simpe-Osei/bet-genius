@@ -4,7 +4,9 @@ import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "../lib/supabaseClient";
 
-// ✅ Safe Paystack Loader
+/* -----------------------------------------------
+   SAFE PAYSTACK LOADER
+------------------------------------------------ */
 async function loadPaystack() {
   if (
     typeof window !== "undefined" &&
@@ -20,49 +22,52 @@ async function loadPaystack() {
     script.async = true;
 
     script.onload = () => {
-      if (
-        window.PaystackPop &&
-        typeof window.PaystackPop.setup === "function"
-      ) {
-        resolve(window.PaystackPop);
-      } else {
-        reject("Paystack failed to initialize properly.");
-      }
+      if (window.PaystackPop?.setup) resolve(window.PaystackPop);
+      else reject("Paystack failed to initialize.");
     };
 
-    script.onerror = () => reject("Failed to load Paystack script.");
+    script.onerror = () => reject("Failed to load Paystack.");
     document.body.appendChild(script);
   });
 }
 
 export default function PredictionCard({ game, user, onShowModal }) {
   const gameType = game.game_type?.toLowerCase();
+
+  /* --------------------------------------------------
+     FIXED GAME LOGIC (AS YOU WANT)
+  --------------------------------------------------- */
   const isFree = gameType === "free";
-  const isVip = gameType === "vip" || gameType === "custom vip";
-  const isCorrectScore =
-    gameType === "correct score" || gameType === "custom correct score";
-  const isCustom =
-    gameType === "custom vip" || gameType === "custom correct score";
+  const isVip = gameType === "vip";
+  const isCorrectScore = gameType === "correct score";
   const isRecovery = gameType === "recovery";
 
-  const [owned, setOwned] = useState(isFree); // free games treated as owned
-  const [revealed, setRevealed] = useState(isFree); // free games revealed by default
-  const [processing, setProcessing] = useState(false);
+  // Custom games should LOOK + ACT like normal ones
+  const isCustomVip = gameType === "custom vip";
+  const isCustomCorrectScore = gameType === "custom correct score";
 
-  const displayType = isVip
+  const behavesLikeVip = isVip || isCustomVip;
+  const behavesLikeCorrectScore = isCorrectScore || isCustomCorrectScore;
+
+  const displayType = behavesLikeVip
     ? "VIP"
-    : isCorrectScore
+    : behavesLikeCorrectScore
     ? "Correct Score"
     : isRecovery
     ? "Recovery"
     : "Free";
 
-  // 🔍 Check if user already purchased (only for paid games)
-  useEffect(() => {
-    const checkOwnership = async () => {
-      if (!user || isFree) return;
+  const [owned, setOwned] = useState(isFree);
+  const [revealed, setRevealed] = useState(isFree);
+  const [processing, setProcessing] = useState(false);
 
-      // check orders first
+  /* --------------------------------------------------
+     CHECK OWNERSHIP
+  --------------------------------------------------- */
+  useEffect(() => {
+    if (!user || isFree) return;
+
+    const check = async () => {
       const { data: orderData } = await supabase
         .from("orders")
         .select("id")
@@ -71,7 +76,6 @@ export default function PredictionCard({ game, user, onShowModal }) {
         .eq("status", "paid")
         .maybeSingle();
 
-      // then check purchases table
       const { data: purchaseData } = await supabase
         .from("purchases")
         .select("id")
@@ -86,117 +90,111 @@ export default function PredictionCard({ game, user, onShowModal }) {
       }
     };
 
-    checkOwnership();
+    check();
   }, [user, game.id, isFree]);
 
-  // 🎯 Matches list (from match_data)
+  /* --------------------------------------------------
+     MATCH DATA
+  --------------------------------------------------- */
   const matches = useMemo(
     () => (Array.isArray(game.match_data) ? game.match_data : []),
     [game.match_data]
   );
 
+  /* --------------------------------------------------
+     COPY BOOKING CODE
+  --------------------------------------------------- */
   const copyCode = async (code) => {
     if (!code) return;
     await navigator.clipboard.writeText(code);
-    onShowModal?.("📋 Booking code copied — bet responsibly & good luck!");
+    onShowModal?.("📋 Booking code copied!");
   };
 
-  // Can this user actually see the booking code?
-  const canSeeCode =
-    isFree || (owned && !!game.booking_code && !isRecovery && !isCustom);
+  /* --------------------------------------------------
+     CAN SEE BOOKING CODE?
+  --------------------------------------------------- */
+  const canSeeCode = isFree || (owned && !!game.booking_code && !isRecovery);
 
-  // 💳 Handle Paystack purchase
+  /* --------------------------------------------------
+     PAYSTACK PURCHASE
+  --------------------------------------------------- */
   const handlePurchase = async () => {
     if (!user) {
       return onShowModal?.("Please log in to unlock this game.");
     }
+
     if (owned) {
       setRevealed(true);
       return;
     }
 
-    if (isCustom)
+    // ⭐ SLOT FULL LOGIC — as you want
+    if (isCustomCorrectScore || isCustomVip) {
       return onShowModal?.(
         "⚠️ Slot Full — Please wait for the next game drop!"
       );
-    if (isRecovery)
+    }
+
+    if (isRecovery) {
       return onShowModal?.(
-        "🔄 Recovery Game — Only available to users who lost a previous match."
+        "🔄 Recovery game is restricted to users who lost a previous VIP bet."
       );
+    }
 
     try {
       setProcessing(true);
       const PaystackPop = await loadPaystack();
 
-      if (!PaystackPop || typeof PaystackPop.setup !== "function") {
-        throw new Error("Paystack not fully initialized — please refresh.");
+      if (!PaystackPop?.setup) {
+        throw new Error("Paystack not loaded properly.");
       }
 
-      const paystackCallback = async (response) => {
-        try {
-          // Insert into orders table
-          const { error: orderError } = await supabase.from("orders").insert({
-            user_id: user.id,
-            game_id: game.id,
-            amount: game.price || 0,
-            currency: "GHS",
-            status: "paid",
-            paystack_ref: response.reference,
-          });
+      const callback = async (resp) => {
+        await supabase.from("orders").insert({
+          user_id: user.id,
+          game_id: game.id,
+          amount: game.price || 0,
+          currency: "GHS",
+          status: "paid",
+          paystack_ref: resp.reference,
+        });
 
-          if (orderError) throw orderError;
+        await supabase.from("purchases").insert({
+          user_id: user.id,
+          game_id: game.id,
+          is_purchased: true,
+        });
 
-          // Also insert into purchases table
-          const { error: purchaseError } = await supabase
-            .from("purchases")
-            .insert({
-              user_id: user.id,
-              game_id: game.id,
-              is_purchased: true,
-            });
-
-          if (purchaseError)
-            console.error("Purchase insert error:", purchaseError);
-
-          setOwned(true);
-          setRevealed(true);
-          onShowModal?.("✅ Payment successful! Your code is now unlocked.");
-        } catch (err) {
-          console.error("Insert error:", err);
-          onShowModal?.(
-            "⚠️ Payment saved but could not verify. Please contact support."
-          );
-        }
+        setOwned(true);
+        setRevealed(true);
+        onShowModal?.("✅ Payment successful! Game unlocked.");
       };
 
-      const handler = PaystackPop.setup({
+      PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
         email: user.email,
         amount: (game.price || 0) * 100,
         currency: "GHS",
-        callback: (resp) => paystackCallback(resp),
-        onClose: () =>
-          onShowModal?.("💳 Payment window closed. You can try again anytime."),
-      });
-
-      handler.openIframe();
+        callback,
+        onClose: () => onShowModal?.("Payment window closed."),
+      }).openIframe();
     } catch (err) {
-      console.error("Paystack setup error:", err);
-      onShowModal?.("❌ Payment failed. Please refresh and retry.");
+      onShowModal?.("❌ Payment failed. Try again.");
     } finally {
       setProcessing(false);
     }
   };
 
-  // Decide footer CTA text for paid games
+  /* --------------------------------------------------
+     CTA BUTTON LOGIC — FIXED
+  --------------------------------------------------- */
   const getCtaProps = () => {
     if (isFree) return null;
 
     if (!user) {
       return {
         label: "Login to unlock",
-        onClick: () =>
-          onShowModal?.("Please log in to purchase and unlock this game."),
+        onClick: () => onShowModal?.("Please log in to unlock this game."),
         disabled: false,
       };
     }
@@ -211,28 +209,26 @@ export default function PredictionCard({ game, user, onShowModal }) {
 
     if (isRecovery) {
       return {
-        label: "Recovery Game (restricted)",
+        label: "Recovery (Restricted)",
         onClick: () =>
           onShowModal?.(
-            "🔄 Recovery games are only for users who lost a previous VIP bet."
+            "Recovery games are only for users who lost a previous VIP bet."
           ),
         disabled: true,
       };
     }
 
-    if (isCustom) {
+    // ⭐ Custom should NOT show slot full button — show normal unlock button
+    if (isCustomVip || isCustomCorrectScore) {
       return {
-        label: "Slot Full",
-        onClick: () =>
-          onShowModal?.(
-            "⚠️ Custom correct score slot is full. Wait for the next drop."
-          ),
-        disabled: true,
+        label: `Unlock for ₵${game.price}`,
+        onClick: handlePurchase, // Will show slot full modal
+        disabled: false,
       };
     }
 
     return {
-      label: processing ? "Processing…" : `Unlock for ₵${game.price || 0}`,
+      label: processing ? "Processing…" : `Unlock for ₵${game.price}`,
       onClick: handlePurchase,
       disabled: processing,
     };
@@ -240,6 +236,9 @@ export default function PredictionCard({ game, user, onShowModal }) {
 
   const cta = getCtaProps();
 
+  /* --------------------------------------------------
+     UI
+  --------------------------------------------------- */
   return (
     <motion.div
       layout
@@ -247,7 +246,7 @@ export default function PredictionCard({ game, user, onShowModal }) {
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl bg-white/5 border border-white/10 p-5 hover:scale-[1.02] transition-all"
     >
-      {/* 🏷 Header */}
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-bold text-[#FFD601] capitalize">{displayType}</h3>
         <p className="text-xs text-white/70">
@@ -255,13 +254,13 @@ export default function PredictionCard({ game, user, onShowModal }) {
         </p>
       </div>
 
-      {/* 🎯 Odds & Price */}
+      {/* ODDS */}
       <div className="flex justify-between text-sm mb-4">
         <p>Total Odds: {game.total_odds}</p>
-        <p>₵{game.price || 0}</p>
+        <p>₵{game.price}</p>
       </div>
 
-      {/* 🏆 Matches */}
+      {/* MATCHES */}
       <div className="bg-white/5 rounded-xl p-3 mb-4 max-h-36 overflow-y-auto text-sm text-white/80">
         {matches.map((m, i) => (
           <div
@@ -271,22 +270,12 @@ export default function PredictionCard({ game, user, onShowModal }) {
             <span>
               {m.homeTeam} vs {m.awayTeam}
             </span>
-            <span
-              className={
-                m.status === "Win"
-                  ? "text-emerald-400"
-                  : m.status === "Loss"
-                  ? "text-red-400"
-                  : "text-yellow-400"
-              }
-            >
-              {m.status || "Pending"}
-            </span>
+            <span className="text-yellow-400">{m.status || "Pending"}</span>
           </div>
         ))}
       </div>
 
-      {/* 🎫 Booking Code */}
+      {/* BOOKING CODE */}
       <div className="bg-white/5 rounded-xl p-3 flex justify-between items-center">
         <span className="text-white/80">Booking:</span>
         {canSeeCode ? (
@@ -301,21 +290,21 @@ export default function PredictionCard({ game, user, onShowModal }) {
         )}
       </div>
 
-      {/* 🔓 Footer */}
-      {isFree ? (
-        <p className="text-emerald-400 text-sm mt-3 text-center">
+      {/* CTA */}
+      {!isFree && cta && (
+        <button
+          onClick={cta.onClick}
+          disabled={cta.disabled}
+          className="w-full mt-3 bg-[#FFD601] text-[#142B6F] font-bold py-2 rounded-xl hover:brightness-110 disabled:opacity-50"
+        >
+          {cta.label}
+        </button>
+      )}
+
+      {isFree && (
+        <p className="text-emerald-400 text-sm text-center mt-3">
           🎉 Free Tip — Copy & Bet Smart!
         </p>
-      ) : (
-        cta && (
-          <button
-            onClick={cta.onClick}
-            disabled={cta.disabled}
-            className="w-full mt-3 bg-[#FFD601] text-[#142B6F] font-bold py-2 rounded-xl hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {cta.label}
-          </button>
-        )
       )}
     </motion.div>
   );
