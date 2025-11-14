@@ -1,18 +1,17 @@
 "use client";
 
-import useLoading from "@/hooks/useLoading";
-import { fetchWithRetry } from "@/lib/apiHelpers";
-
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../../lib/supabaseClient";
-import dynamic from "next/dynamic"; // ✅ for hydration-safe import
-import PredictionCard from "../../components/PredictionCard";
-import MessageModal from "../../components/MessageModal"; // ✅ glowing modal
+import dynamic from "next/dynamic";
 
-// ✅ Dynamically import FiltersBar (avoids hydration mismatch)
-const FiltersBar = dynamic(() => import("../../components/FiltersBar"), {
-  ssr: false, // ❌ disables server-side rendering for it
+import { supabase } from "@/lib/supabaseClient";
+import { fetchWithRetry } from "@/lib/apiHelpers";
+import PredictionCard from "@/components/PredictionCard";
+import MessageModal from "@/components/MessageModal";
+
+// ✅ Dynamically import FiltersBar to avoid hydration issues
+const FiltersBar = dynamic(() => import("@/components/FiltersBar"), {
+  ssr: false,
   loading: () => (
     <div className="text-center text-white/50 py-4 animate-pulse">
       Loading filters...
@@ -21,16 +20,22 @@ const FiltersBar = dynamic(() => import("../../components/FiltersBar"), {
 });
 
 export default function PredictionsPage() {
-  const [games, setGames] = useState([]);
+  const [publicGames, setPublicGames] = useState([]); // from /api/public-games (no codes)
+  const [privateGames, setPrivateGames] = useState([]); // from Supabase with RLS (codes)
+  const [games, setGames] = useState([]); // merged result
+
   const [loading, setLoading] = useState(true);
   const [activeType, setActiveType] = useState("All");
   const [activeDay, setActiveDay] = useState("Today");
   const [selectedDate, setSelectedDate] = useState(null);
   const [user, setUser] = useState(null);
+
   const [showModal, setShowModal] = useState(false);
   const [modalMessage, setModalMessage] = useState("");
 
-  // ✅ Fetch logged-in user
+  // ----------------------------------------------------------
+  // 👤 Fetch logged-in user (if any)
+  // ----------------------------------------------------------
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
@@ -41,40 +46,88 @@ export default function PredictionsPage() {
     const { data: sub } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user || null);
     });
+
     return () => sub?.subscription?.unsubscribe();
   }, []);
 
-  // ✅ Fetch games from Supabase
+  // ----------------------------------------------------------
+  // 🌍 Fetch public games (no booking_code) via API route
+  // ----------------------------------------------------------
   useEffect(() => {
-    const fetchGames = async () => {
+    const loadPublicGames = async () => {
       try {
-        setLoading(true);
+        const data = await fetchWithRetry("/api/public-games");
+        setPublicGames(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Public games fetch error:", err.message);
+      }
+    };
+
+    loadPublicGames();
+  }, []);
+
+  // ----------------------------------------------------------
+  // 🔒 Fetch private games from Supabase with RLS
+  //     - Not logged in: will only get FREE games (with booking_code)
+  //     - Logged in: FREE + any purchased VIP/Correct Score (with booking_code)
+  // ----------------------------------------------------------
+  useEffect(() => {
+    const loadPrivateGames = async () => {
+      try {
         const { data, error } = await supabase
           .from("games")
           .select("*")
           .order("created_at", { ascending: false });
-        if (error) throw error;
 
-        setGames(data || []);
-      } catch (e) {
-        console.error("Prediction fetch error:", e.message);
-      } finally {
-        setLoading(false);
+        if (error) throw error;
+        setPrivateGames(data || []);
+      } catch (err) {
+        console.error("Private games fetch error:", err.message);
       }
     };
-    fetchGames();
-  }, []);
 
-  // ✅ Helpers
+    loadPrivateGames();
+  }, [user]);
+
+  // ----------------------------------------------------------
+  // ♻️ Merge public + private lists
+  //     - public gives us all cards
+  //     - private overrides with booking_code and other restricted fields
+  // ----------------------------------------------------------
+  useEffect(() => {
+    const map = new Map();
+
+    // First put all public games (no codes)
+    for (const g of publicGames) {
+      map.set(g.id, { ...g });
+    }
+
+    // Then override with private data (adds booking_code where allowed)
+    for (const g of privateGames) {
+      const existing = map.get(g.id) || {};
+      map.set(g.id, { ...existing, ...g });
+    }
+
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    );
+
+    setGames(merged);
+    setLoading(false);
+  }, [publicGames, privateGames]);
+
+  // ----------------------------------------------------------
+  // Helpers for date filtering
+  // ----------------------------------------------------------
   const startOfDay = (d) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
   const addDays = (d, n) => {
     const x = new Date(d);
     x.setDate(x.getDate() + n);
     return x;
   };
 
-  // ✅ Day ranges
   const dayRanges = useMemo(() => {
     const now = new Date();
     const today = startOfDay(now);
@@ -88,7 +141,9 @@ export default function PredictionsPage() {
     };
   }, []);
 
-  // ✅ Filter logic
+  // ----------------------------------------------------------
+  // 🎯 Filtering by day + type
+  // ----------------------------------------------------------
   const filtered = useMemo(() => {
     let start, end;
 
@@ -115,9 +170,11 @@ export default function PredictionsPage() {
     });
   }, [games, activeDay, activeType, dayRanges, selectedDate]);
 
+  // ----------------------------------------------------------
+  // UI
+  // ----------------------------------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0E1D59] to-[#142B6F] text-white">
-      {/* ✅ Main section */}
       <div className="pt-24 px-6">
         {/* 🧠 Header */}
         <motion.header
@@ -136,7 +193,7 @@ export default function PredictionsPage() {
           </p>
         </motion.header>
 
-        {/* 🔘 FiltersBar */}
+        {/* 🔘 Filters */}
         <div className="max-w-6xl mx-auto px-4">
           <FiltersBar
             activeType={activeType}

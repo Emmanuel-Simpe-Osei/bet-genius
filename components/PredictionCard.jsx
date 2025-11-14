@@ -1,4 +1,5 @@
 "use client";
+
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "../lib/supabaseClient";
@@ -10,7 +11,6 @@ async function loadPaystack() {
     window.PaystackPop &&
     typeof window.PaystackPop.setup === "function"
   ) {
-    console.log("✅ Paystack already loaded");
     return window.PaystackPop;
   }
 
@@ -24,23 +24,18 @@ async function loadPaystack() {
         window.PaystackPop &&
         typeof window.PaystackPop.setup === "function"
       ) {
-        console.log("✅ Paystack script initialized successfully");
         resolve(window.PaystackPop);
       } else {
-        reject("⚠️ Paystack failed to initialize properly.");
+        reject("Paystack failed to initialize properly.");
       }
     };
 
-    script.onerror = () => reject("❌ Failed to load Paystack script.");
+    script.onerror = () => reject("Failed to load Paystack script.");
     document.body.appendChild(script);
   });
 }
 
 export default function PredictionCard({ game, user, onShowModal }) {
-  const [revealed, setRevealed] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [owned, setOwned] = useState(false);
-
   const gameType = game.game_type?.toLowerCase();
   const isFree = gameType === "free";
   const isVip = gameType === "vip" || gameType === "custom vip";
@@ -50,6 +45,10 @@ export default function PredictionCard({ game, user, onShowModal }) {
     gameType === "custom vip" || gameType === "custom correct score";
   const isRecovery = gameType === "recovery";
 
+  const [owned, setOwned] = useState(isFree); // free games treated as owned
+  const [revealed, setRevealed] = useState(isFree); // free games revealed by default
+  const [processing, setProcessing] = useState(false);
+
   const displayType = isVip
     ? "VIP"
     : isCorrectScore
@@ -58,10 +57,11 @@ export default function PredictionCard({ game, user, onShowModal }) {
     ? "Recovery"
     : "Free";
 
-  // 🔍 Check if user already purchased (either in orders or purchases)
+  // 🔍 Check if user already purchased (only for paid games)
   useEffect(() => {
     const checkOwnership = async () => {
-      if (!user) return;
+      if (!user || isFree) return;
+
       // check orders first
       const { data: orderData } = await supabase
         .from("orders")
@@ -85,22 +85,35 @@ export default function PredictionCard({ game, user, onShowModal }) {
         setRevealed(true);
       }
     };
-    checkOwnership();
-  }, [user, game.id]);
 
+    checkOwnership();
+  }, [user, game.id, isFree]);
+
+  // 🎯 Matches list (from match_data)
   const matches = useMemo(
     () => (Array.isArray(game.match_data) ? game.match_data : []),
     [game.match_data]
   );
 
   const copyCode = async (code) => {
+    if (!code) return;
     await navigator.clipboard.writeText(code);
     onShowModal?.("📋 Booking code copied — bet responsibly & good luck!");
   };
 
+  // Can this user actually see the booking code?
+  const canSeeCode =
+    isFree || (owned && !!game.booking_code && !isRecovery && !isCustom);
+
+  // 💳 Handle Paystack purchase
   const handlePurchase = async () => {
-    if (!user) return (window.location.href = "/login");
-    if (owned) return setRevealed(true);
+    if (!user) {
+      return onShowModal?.("Please log in to unlock this game.");
+    }
+    if (owned) {
+      setRevealed(true);
+      return;
+    }
 
     if (isCustom)
       return onShowModal?.(
@@ -113,17 +126,11 @@ export default function PredictionCard({ game, user, onShowModal }) {
 
     try {
       setProcessing(true);
-      console.log("🚀 Starting Paystack flow...");
       const PaystackPop = await loadPaystack();
 
       if (!PaystackPop || typeof PaystackPop.setup !== "function") {
         throw new Error("Paystack not fully initialized — please refresh.");
       }
-
-      const handlePaymentSuccess = (response) => {
-        console.log("✅ Paystack payment callback triggered:", response);
-        paystackCallback(response);
-      };
 
       const paystackCallback = async (response) => {
         try {
@@ -139,7 +146,7 @@ export default function PredictionCard({ game, user, onShowModal }) {
 
           if (orderError) throw orderError;
 
-          // ✅ Also insert into purchases table
+          // Also insert into purchases table
           const { error: purchaseError } = await supabase
             .from("purchases")
             .insert({
@@ -149,7 +156,7 @@ export default function PredictionCard({ game, user, onShowModal }) {
             });
 
           if (purchaseError)
-            console.error("⚠️ Purchase insert error:", purchaseError);
+            console.error("Purchase insert error:", purchaseError);
 
           setOwned(true);
           setRevealed(true);
@@ -167,19 +174,71 @@ export default function PredictionCard({ game, user, onShowModal }) {
         email: user.email,
         amount: (game.price || 0) * 100,
         currency: "GHS",
-        callback: (resp) => handlePaymentSuccess(resp),
+        callback: (resp) => paystackCallback(resp),
         onClose: () =>
           onShowModal?.("💳 Payment window closed. You can try again anytime."),
       });
 
       handler.openIframe();
     } catch (err) {
-      console.error("💥 Paystack setup error:", err);
+      console.error("Paystack setup error:", err);
       onShowModal?.("❌ Payment failed. Please refresh and retry.");
     } finally {
       setProcessing(false);
     }
   };
+
+  // Decide footer CTA text for paid games
+  const getCtaProps = () => {
+    if (isFree) return null;
+
+    if (!user) {
+      return {
+        label: "Login to unlock",
+        onClick: () =>
+          onShowModal?.("Please log in to purchase and unlock this game."),
+        disabled: false,
+      };
+    }
+
+    if (owned) {
+      return {
+        label: "Purchased — Revealed",
+        onClick: () => setRevealed(true),
+        disabled: false,
+      };
+    }
+
+    if (isRecovery) {
+      return {
+        label: "Recovery Game (restricted)",
+        onClick: () =>
+          onShowModal?.(
+            "🔄 Recovery games are only for users who lost a previous VIP bet."
+          ),
+        disabled: true,
+      };
+    }
+
+    if (isCustom) {
+      return {
+        label: "Slot Full",
+        onClick: () =>
+          onShowModal?.(
+            "⚠️ Custom correct score slot is full. Wait for the next drop."
+          ),
+        disabled: true,
+      };
+    }
+
+    return {
+      label: processing ? "Processing…" : `Unlock for ₵${game.price || 0}`,
+      onClick: handlePurchase,
+      disabled: processing,
+    };
+  };
+
+  const cta = getCtaProps();
 
   return (
     <motion.div
@@ -230,7 +289,7 @@ export default function PredictionCard({ game, user, onShowModal }) {
       {/* 🎫 Booking Code */}
       <div className="bg-white/5 rounded-xl p-3 flex justify-between items-center">
         <span className="text-white/80">Booking:</span>
-        {isFree || revealed ? (
+        {canSeeCode ? (
           <button
             onClick={() => copyCode(game.booking_code)}
             className="bg-[#FFD601] text-[#142B6F] px-4 py-1 rounded-lg font-bold"
@@ -247,22 +306,16 @@ export default function PredictionCard({ game, user, onShowModal }) {
         <p className="text-emerald-400 text-sm mt-3 text-center">
           🎉 Free Tip — Copy & Bet Smart!
         </p>
-      ) : revealed ? (
-        <p className="text-[#FFD601] text-sm mt-3 text-center">
-          ✅ Purchased — Revealed in Orders
-        </p>
-      ) : isRecovery ? (
-        <p className="text-[#FFB800] text-sm mt-3 text-center">
-          🔄 Recovery Game — Only available to previous buyers
-        </p>
       ) : (
-        <button
-          onClick={handlePurchase}
-          disabled={processing}
-          className="w-full mt-3 bg-[#FFD601] text-[#142B6F] font-bold py-2 rounded-xl hover:brightness-110 transition-all"
-        >
-          {processing ? "Processing…" : `Unlock for ₵${game.price}`}
-        </button>
+        cta && (
+          <button
+            onClick={cta.onClick}
+            disabled={cta.disabled}
+            className="w-full mt-3 bg-[#FFD601] text-[#142B6F] font-bold py-2 rounded-xl hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {cta.label}
+          </button>
+        )
       )}
     </motion.div>
   );
