@@ -12,109 +12,109 @@ export default function GameForm({ onGameAdded, showToast }) {
   const [totalOdds, setTotalOdds] = useState("");
   const [price, setPrice] = useState("");
 
-  // 🔑 Key generator for stable React rendering
-  const getMatchKey = (match, index) =>
-    match.eventId
-      ? `${match.eventId}-${index}`
-      : `${match.homeTeam}-${match.awayTeam}-${index}`.replace(/\s+/g, "-");
+  // Unique React keys
+  const getMatchKey = (match, i) =>
+    (match.eventId ||
+      `${match.homeTeam}-${match.awayTeam}`.replace(/\s+/g, "-")) +
+    "-" +
+    i;
 
-  // 🎯 Load matches from SportyBet API
+  // 1️⃣ Load matches from SportyBet API
   const handleLoad = async () => {
-    if (!bookingCode.trim()) {
-      showToast?.("Please enter a booking code", "warning");
-      return;
-    }
+    if (!bookingCode.trim())
+      return showToast?.("Enter booking code", "warning");
 
     setLoading(true);
-    console.log("🔄 Fetching booking:", bookingCode);
 
     try {
       const res = await fetch(`/api/sportybet/${bookingCode}`);
+      if (!res.ok) throw new Error("Failed to fetch booking");
+
       const data = await res.json();
 
-      console.log("✅ Booking response:", data);
-
       if (!data.matches?.length) {
-        showToast?.("No matches found for this booking code", "error");
         setMatches([]);
         setTotalOdds("");
-        return;
+        return showToast?.("No matches found", "error");
       }
 
-      const editableMatches = data.matches.map((m) => ({
-        ...m,
+      // Ensure correct shape + add pending status
+      const editable = data.matches.map((m) => ({
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        odds: m.odds,
+        league: m.league,
+        eventId: m.eventId || null,
         status: "Pending",
       }));
 
-      const calculatedOdds = editableMatches.reduce((acc, m) => {
-        const val = parseFloat(m.odds);
-        return acc * (isNaN(val) ? 1 : val);
+      // Calculate odds safely
+      const calc = editable.reduce((acc, m) => {
+        const n = parseFloat(m.odds);
+        return acc * (isNaN(n) ? 1 : n);
       }, 1);
 
-      setMatches(editableMatches);
-      setTotalOdds(calculatedOdds.toFixed(2));
-      showToast?.(
-        `${editableMatches.length} matches loaded successfully!`,
-        "success"
-      );
-    } catch (error) {
-      console.error("❌ Error fetching booking:", error);
-      showToast?.("Failed to load booking. Try again.", "error");
-    } finally {
-      setLoading(false);
+      setMatches(editable);
+      setTotalOdds(calc.toFixed(2));
+
+      showToast?.("Matches loaded successfully", "success");
+    } catch (err) {
+      console.error(err);
+      showToast?.("Error loading booking", "error");
     }
+
+    setLoading(false);
   };
 
-  // 🚀 Upload game via API (not direct Supabase)
+  // Normalize game types
+  const normalizeType = (t) => {
+    t = t.toLowerCase();
+
+    if (t.includes("custom vip")) return "custom vip";
+    if (t.includes("custom correct")) return "custom correct score";
+    if (t.includes("correct score")) return "correct score";
+    if (t.includes("recovery")) return "recovery";
+    if (t.includes("vip")) return "vip";
+    return "free";
+  };
+
+  // 2️⃣ Upload game using API
   const handleUpload = async () => {
     if (!bookingCode.trim())
-      return showToast?.("Booking code is required", "warning");
-    if (matches.length === 0)
-      return showToast?.("No matches to upload", "warning");
-    if (!totalOdds || !price)
-      return showToast?.("Enter total odds and price", "warning");
+      return showToast?.("Booking code required", "warning");
+    if (!matches.length)
+      return showToast?.("Load matches before uploading", "warning");
+    if (!totalOdds || isNaN(totalOdds))
+      return showToast?.("Invalid total odds", "warning");
+    if (!price || isNaN(price)) return showToast?.("Enter a price", "warning");
 
     setUploading(true);
-    console.log("🚀 Starting upload process...");
 
     try {
-      const normalizedType = (() => {
-        const t = gameType.toLowerCase();
-        if (t.includes("custom vip")) return "custom vip";
-        if (t.includes("custom correct")) return "custom correct score";
-        if (t.includes("recovery")) return "recovery";
-        return t;
-      })();
-
       const now = new Date().toISOString();
+      const normalized = normalizeType(gameType);
+
       const payload = {
         booking_code: bookingCode.trim().toUpperCase(),
-        game_type: normalizedType,
-        game_name: `${normalizedType.toUpperCase()} - ${bookingCode.trim()}`,
-        total_odds: parseFloat(totalOdds),
-        price: parseFloat(price),
+        game_type: normalized,
+        game_name: `${normalized.toUpperCase()} - ${bookingCode}`,
+        total_odds: Number(totalOdds),
+        price: Number(price),
         status: "pending",
         match_data: matches,
         created_at: now,
         updated_at: now,
       };
 
-      console.log("🧱 Prepared payload:", payload);
-
-      const response = await fetch("/api/games/upload", {
+      const res = await fetch("/api/games/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
-      console.log("📡 API Response:", result);
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
 
-      if (!response.ok) {
-        throw new Error(result.error || "Upload failed");
-      }
-
-      showToast?.("✅ Game uploaded successfully!", "success");
+      showToast?.("Game uploaded successfully!", "success");
 
       // Reset form
       setMatches([]);
@@ -122,17 +122,17 @@ export default function GameForm({ onGameAdded, showToast }) {
       setPrice("");
       setTotalOdds("");
       setGameType("Free");
+
       onGameAdded?.();
     } catch (err) {
-      console.error("💥 Upload failed:", err);
-      showToast?.(`❌ Upload failed: ${err.message}`, "error");
-    } finally {
-      setUploading(false);
-      console.log("🏁 Upload complete.");
+      console.error(err);
+      showToast?.(`Upload error: ${err.message}`, "error");
     }
+
+    setUploading(false);
   };
 
-  // ⚙️ Update match status manually
+  // Update match status manually
   const handleStatusChange = (index, value) => {
     const updated = [...matches];
     updated[index].status = value;
@@ -141,108 +141,95 @@ export default function GameForm({ onGameAdded, showToast }) {
 
   return (
     <motion.div
-      id="game-form-section"
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6 }}
-      className="bg-[#142B6F] rounded-2xl shadow-lg border border-[#FFD601]/20 overflow-hidden"
+      transition={{ duration: 0.5 }}
+      className="bg-[#142B6F] rounded-2xl shadow-lg border border-[#FFD601]/25 overflow-hidden"
     >
       {/* Header */}
-      <div className="bg-[#142B6F] border-b border-[#FFD601]/30 p-6 text-white">
+      <div className="p-6 border-b border-[#FFD601]/25 text-white">
         <h2 className="text-xl font-bold text-[#FFD601]">Upload New Game</h2>
-        <p className="text-white/70 text-sm">Add betting tips from SportyBet</p>
+        <p className="text-sm text-white/60">Add betting tips from SportyBet</p>
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Booking Code Input */}
+        {/* Booking Input */}
         <div>
-          <label className="block text-sm font-semibold text-white mb-2">
+          <label className="text-white text-sm font-semibold">
             SportyBet Booking Code
           </label>
-          <div className="flex flex-col sm:flex-row gap-3">
+
+          <div className="flex flex-col sm:flex-row gap-3 mt-2">
             <input
-              type="text"
-              placeholder="Enter booking code..."
               value={bookingCode}
               onChange={(e) => setBookingCode(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleLoad()}
-              className="flex-1 px-4 py-3 rounded-xl bg-[#1b2f7e] border border-[#FFD601]/40 text-white placeholder-white/50 focus:ring-2 focus:ring-[#FFD601]/40 focus:outline-none"
+              placeholder="Enter code..."
+              className="flex-1 px-4 py-3 bg-[#1B2F7E] border border-[#FFD601]/40 rounded-xl text-white placeholder-white/50"
             />
+
             <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
               onClick={handleLoad}
               disabled={loading}
-              className="bg-[#FFD601] text-[#142B6F] px-6 py-3 rounded-xl font-semibold disabled:opacity-50 transition-all"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="bg-[#FFD601] text-[#142B6F] font-semibold px-6 py-3 rounded-xl"
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <div className="animate-spin h-4 w-4 border-2 border-[#142B6F] border-t-transparent rounded-full mr-2"></div>
-                  Loading...
-                </span>
-              ) : (
-                "Load Matches"
-              )}
+              {loading ? "Loading..." : "Load Matches"}
             </motion.button>
           </div>
         </div>
 
-        {/* Matches + Settings */}
+        {/* Loaded Matches */}
         <AnimatePresence>
           {matches.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="space-y-6"
             >
               {/* Game Settings */}
-              <div className="bg-[#1b2f7e] border border-[#FFD601]/30 rounded-xl p-4 text-white">
+              <div className="p-4 rounded-xl bg-[#1B2F7E] border border-[#FFD601]/30 text-white">
                 <h3 className="font-semibold text-[#FFD601] mb-3">
                   Game Settings
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm mb-1">Game Type</label>
+                    <label className="text-sm">Game Type</label>
                     <select
                       value={gameType}
                       onChange={(e) => setGameType(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white focus:ring-2 focus:ring-[#FFD601]/40"
+                      className="w-full mt-1 px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white"
                     >
-                      <option value="Free">Free</option>
-                      <option value="VIP">VIP</option>
-                      <option value="Correct Score">Correct Score</option>
-                      <option value="Custom VIP">Custom VIP</option>
-                      <option value="Custom Correct Score">
-                        Custom Correct Score
-                      </option>
-                      <option value="Recovery">Recovery</option>
+                      <option>Free</option>
+                      <option>VIP</option>
+                      <option>Correct Score</option>
+                      <option>Custom VIP</option>
+                      <option>Custom Correct Score</option>
+                      <option>Recovery</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm mb-1">Total Odds *</label>
+                    <label className="text-sm">Total Odds</label>
                     <input
                       type="number"
-                      step="0.01"
                       min="0"
                       value={totalOdds}
                       onChange={(e) => setTotalOdds(e.target.value)}
-                      placeholder="Auto-calculated"
-                      className="w-full px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white placeholder-white/50 focus:ring-2 focus:ring-[#FFD601]/40"
+                      className="w-full mt-1 px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm mb-1">Price (₵) *</label>
+                    <label className="text-sm">Price (₵)</label>
                     <input
                       type="number"
-                      step="0.01"
                       min="0"
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white placeholder-white/50 focus:ring-2 focus:ring-[#FFD601]/40"
+                      className="w-full mt-1 px-3 py-2 rounded-lg bg-[#142B6F] border border-[#FFD601]/30 text-white"
                     />
                   </div>
                 </div>
@@ -250,40 +237,33 @@ export default function GameForm({ onGameAdded, showToast }) {
 
               {/* Matches */}
               <div className="text-white">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold">
-                    Matches ({matches.length})
-                  </h3>
-                  <span className="px-3 py-1 bg-[#FFD601] text-[#142B6F] rounded-full text-sm font-semibold">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-semibold">Matches ({matches.length})</h3>
+
+                  <span className="px-3 py-1 bg-[#FFD601] text-[#142B6F] rounded-full font-semibold">
                     Total Odds: {totalOdds}
                   </span>
                 </div>
 
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                <div className="space-y-3 max-h-96 overflow-y-auto">
                   {matches.map((match, i) => (
-                    <motion.div
+                    <div
                       key={getMatchKey(match, i)}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      whileHover={{ scale: 1.01 }}
-                      className="bg-[#142B6F] border border-[#FFD601]/30 p-4 rounded-xl"
+                      className="p-4 rounded-xl bg-[#142B6F] border border-[#FFD601]/25"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex justify-between items-center">
                         <div>
-                          <h4 className="font-medium text-white text-sm">
+                          <p className="font-medium">
                             {match.homeTeam} vs {match.awayTeam}
-                          </h4>
+                          </p>
                           {match.league && (
-                            <p className="text-xs text-white/70">
+                            <p className="text-xs text-white/60">
                               {match.league}
                             </p>
                           )}
-                          {match.odds && (
-                            <p className="text-xs text-[#FFD601] font-medium mt-1">
-                              Odds: {match.odds}
-                            </p>
-                          )}
+                          <p className="text-xs text-[#FFD601] font-medium">
+                            Odds: {match.odds}
+                          </p>
                         </div>
 
                         <select
@@ -291,37 +271,28 @@ export default function GameForm({ onGameAdded, showToast }) {
                           onChange={(e) =>
                             handleStatusChange(i, e.target.value)
                           }
-                          className="px-3 py-2 rounded-lg bg-[#1b2f7e] border border-[#FFD601]/30 text-white text-sm focus:ring-2 focus:ring-[#FFD601]/40"
+                          className="px-3 py-2 bg-[#1B2F7E] border border-[#FFD601]/30 rounded-lg text-white text-sm"
                         >
-                          <option value="Pending">Pending</option>
-                          <option value="Won">Won</option>
-                          <option value="Lost">Lost</option>
+                          <option>Pending</option>
+                          <option>Won</option>
+                          <option>Lost</option>
                         </select>
                       </div>
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
               </div>
 
               {/* Upload Button */}
-              <div className="pt-4 border-t border-[#FFD601]/20">
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={handleUpload}
-                  disabled={uploading}
-                  className="w-full bg-[#FFD601] text-[#142B6F] font-bold py-3 rounded-xl disabled:opacity-50"
-                >
-                  {uploading ? (
-                    <span className="flex items-center justify-center">
-                      <div className="animate-spin h-4 w-4 border-2 border-[#142B6F] border-t-transparent rounded-full mr-2"></div>
-                      Uploading Game...
-                    </span>
-                  ) : (
-                    "Upload Game"
-                  )}
-                </motion.button>
-              </div>
+              <motion.button
+                onClick={handleUpload}
+                disabled={uploading}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className="w-full py-3 rounded-xl bg-[#FFD601] text-[#142B6F] font-bold disabled:opacity-50"
+              >
+                {uploading ? "Uploading game…" : "Upload Game"}
+              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>

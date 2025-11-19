@@ -1,86 +1,81 @@
-// middleware.js
 import { NextResponse } from "next/server";
-import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
+import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 
 export async function middleware(req) {
   const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
   const url = req.nextUrl.clone();
   const path = url.pathname;
 
-  // 🚫 Skip middleware for non-protected or external routes
+  // Skip system & static files
   if (
     path.startsWith("/_next") ||
     path.startsWith("/api") ||
     path.startsWith("/favicon") ||
     path.startsWith("/images") ||
-    path.startsWith("/public") ||
     path.includes("supabase.co") ||
     path.includes("storage/v1")
   ) {
     return res;
   }
 
-  // 🟢 Allow login/signup freely
-  if (path === "/login" || path === "/signup") return res;
+  try {
+    // Create Supabase client for middleware
+    const supabase = await createSupabaseRouteClient();
 
-  // 🧠 Get Supabase session
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.getSession();
+    // Get session using the new method
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
 
-  console.log("🧩 Middleware Trigger:", {
-    path,
-    hasSession: !!session,
-    error: error?.message,
-  });
+    console.log("Middleware - Path:", path, "Has session:", !!session);
 
-  // ⏳ Let through if cookie not set yet
-  if (!session && req.cookies.get("sb-access-token") === undefined) {
-    console.log("⏳ Cookie not yet available, skipping redirect");
+    // If user is on auth pages but has session, redirect to dashboard
+    if (path === "/login" || path === "/signup") {
+      if (session) {
+        console.log("Redirecting authenticated user from auth page");
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .single();
+
+        const role = profile?.role || "user";
+        const redirectPath =
+          role === "admin" ? "/dashboard" : "/user-dashboard";
+
+        url.pathname = redirectPath;
+        return NextResponse.redirect(url);
+      }
+      return res;
+    }
+
+    // If user tries to access protected routes without session
+    if (
+      (path.startsWith("/dashboard") || path.startsWith("/user-dashboard")) &&
+      !session
+    ) {
+      console.log("No session, redirecting to login");
+      url.pathname = "/login";
+      url.searchParams.set("next", path);
+      return NextResponse.redirect(url);
+    }
+
+    return res;
+  } catch (error) {
+    console.error("Middleware error:", error);
+    // If there's an error with Supabase, allow the request to continue
     return res;
   }
-
-  // 🚫 Redirect unauthenticated dashboard users
-  if (
-    !session &&
-    (path.startsWith("/dashboard") || path.startsWith("/user-dashboard"))
-  ) {
-    console.log("🚫 No session found → redirect to /login");
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-
-  // ✅ Role-based redirection between dashboards
-  if (session) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", session.user.id)
-      .single();
-
-    const role = profile?.role || "user";
-
-    // Admin visiting user dashboard → send to admin dashboard
-    if (role === "admin" && path.startsWith("/user-dashboard")) {
-      console.log("🔄 Admin detected → redirecting to /dashboard");
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
-    }
-
-    // User visiting admin dashboard → send to user dashboard
-    if (role !== "admin" && path.startsWith("/dashboard")) {
-      console.log("🔄 Normal user detected → redirecting to /user-dashboard");
-      url.pathname = "/user-dashboard";
-      return NextResponse.redirect(url);
-    }
-  }
-
-  return res;
 }
 
-// ✅ Apply middleware only to dashboard routes
 export const config = {
-  matcher: ["/dashboard/:path*", "/user-dashboard/:path*"],
+  matcher: [
+    "/",
+    "/login",
+    "/signup",
+    "/dashboard/:path*",
+    "/user-dashboard/:path*",
+  ],
 };

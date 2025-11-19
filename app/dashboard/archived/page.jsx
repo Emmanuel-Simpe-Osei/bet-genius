@@ -1,9 +1,30 @@
+// app/dashboard/archived/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import GameCard from "../games/GameCard";
+
+function normalizeGame(raw) {
+  let matchData = [];
+
+  if (Array.isArray(raw.match_data)) {
+    matchData = raw.match_data;
+  } else if (typeof raw.match_data === "string") {
+    try {
+      const parsed = JSON.parse(raw.match_data);
+      if (Array.isArray(parsed)) matchData = parsed;
+    } catch {
+      matchData = [];
+    }
+  }
+
+  return {
+    ...raw,
+    match_data: matchData,
+  };
+}
 
 export default function ArchivedPage() {
   const [archivedGames, setArchivedGames] = useState([]);
@@ -15,6 +36,7 @@ export default function ArchivedPage() {
   const fetchArchivedGames = async () => {
     try {
       setIsLoading(true);
+
       const { data, error } = await supabase
         .from("games")
         .select("*")
@@ -22,7 +44,9 @@ export default function ArchivedPage() {
         .order("archived_at", { ascending: false });
 
       if (error) throw error;
-      setArchivedGames(data || []);
+
+      const normalized = (data || []).map(normalizeGame);
+      setArchivedGames(normalized);
     } catch (err) {
       console.error("Error fetching archived games:", err.message);
       setMessage("⚠️ Failed to load archived games.");
@@ -34,11 +58,13 @@ export default function ArchivedPage() {
   // ♻️ Restore archived game
   const restoreGame = async (id) => {
     try {
-      const { error } = await supabase
-        .from("games")
-        .update({ status: "active", archived_at: null })
-        .eq("id", id);
-      if (error) throw error;
+      const res = await fetch("/api/games/restore", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
       setMessage("✅ Game restored successfully!");
       fetchArchivedGames();
@@ -48,16 +74,20 @@ export default function ArchivedPage() {
     }
   };
 
-  // 🗑️ Permanently delete
+  // ❌ Permanently delete
   const deleteGame = async (id) => {
-    if (!confirm("Are you sure you want to delete this game permanently?"))
-      return;
+    if (!confirm("This will permanently delete the game. Continue?")) return;
 
     try {
-      const { error } = await supabase.from("games").delete().eq("id", id);
-      if (error) throw error;
+      const res = await fetch("/api/games/delete", {
+        method: "POST",
+        body: JSON.stringify({ id }),
+      });
 
-      setMessage("🗑️ Game deleted permanently.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setMessage("🗑️ Game permanently deleted.");
       fetchArchivedGames();
     } catch (err) {
       console.error("Delete error:", err.message);
@@ -69,109 +99,102 @@ export default function ArchivedPage() {
     fetchArchivedGames();
   }, []);
 
-  // 🔍 Search filter
-  const filtered = archivedGames.filter(
-    (game) =>
-      game.booking_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      game.game_type?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // 🕓 Helper for "time since archived"
-  const timeSinceArchived = (archived_at) => {
-    if (!archived_at) return "Unknown";
-    const diffMs = Date.now() - new Date(archived_at).getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays < 1) return "Archived today";
-    if (diffDays === 1) return "Archived 1 day ago";
-    return `Archived ${diffDays} days ago`;
-  };
+  // 🔍 Search
+  const filtered = archivedGames.filter((g) => {
+    const needle = searchTerm.toLowerCase();
+    return (
+      g.booking_code?.toLowerCase().includes(needle) ||
+      g.game_type?.toLowerCase().includes(needle)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-[#142B6F]/5 p-6">
-      {/* 🧭 HEADER */}
+      {/* HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="text-center space-y-2 mb-8"
+        className="text-center mb-8"
       >
         <h1 className="text-3xl font-semibold text-[#142B6F]">
           Archived Games
         </h1>
         <p className="text-gray-500 text-sm">
-          View, restore, or permanently delete automatically archived games.
+          View, restore or permanently delete archived games.
         </p>
       </motion.div>
 
-      {/* 🔍 SEARCH */}
+      {/* SEARCH */}
       <div className="max-w-md mx-auto mb-6">
         <input
           type="text"
           placeholder="Search archived games..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#FFD601] focus:ring-2 focus:ring-[#FFD601]/30 outline-none transition-all duration-300 bg-white shadow-sm text-gray-800"
+          className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:border-[#FFD601] focus:ring-2 focus:ring-[#FFD601]/30 outline-none bg-white shadow-sm"
         />
       </div>
 
-      {/* 🗨️ STATUS MESSAGE */}
+      {/* STATUS MESSAGE */}
       {message && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="text-center mb-4 text-sm text-gray-700 font-medium"
+          className="text-center mb-4 text-sm text-gray-800 font-medium"
         >
           {message}
         </motion.div>
       )}
 
-      {/* 🎯 GRID */}
+      {/* ARCHIVE GRID */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <div
               key={i}
-              className="h-56 bg-gray-100 rounded-2xl animate-pulse"
+              className="h-64 bg-gray-200 rounded-xl animate-pulse"
             />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">
-          <p>No archived games found.</p>
+        <div className="text-center py-14 text-gray-500">
+          No archived games found.
         </div>
       ) : (
         <AnimatePresence>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {filtered.map((game) => (
               <motion.div
                 key={game.id}
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white rounded-2xl shadow p-4 border border-gray-100 hover:shadow-lg transition-all duration-300"
+                exit={{ opacity: 0, y: -20 }}
+                className="flex flex-col items-center gap-4"
               >
-                <GameCard game={game} />
+                {/* FULL, READ-ONLY GameCard */}
+                <GameCard
+                  game={game}
+                  archivedMode={true}
+                  // showToast is mostly unused in archived mode, but kept for safety
+                  showToast={(msg) => setMessage(msg)}
+                />
 
-                {/* FOOTER ACTIONS */}
-                <div className="flex items-center justify-between mt-4 border-t pt-3 text-sm">
-                  <span className="text-gray-500 text-xs">
-                    {timeSinceArchived(game.archived_at)}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => restoreGame(game.id)}
-                      className="px-3 py-1 rounded-md text-sm bg-green-100 text-green-700 hover:bg-green-200 transition"
-                    >
-                      Restore
-                    </button>
-                    <button
-                      onClick={() => deleteGame(game.id)}
-                      className="px-3 py-1 rounded-md text-sm bg-red-100 text-red-700 hover:bg-red-200 transition"
-                    >
-                      Delete
-                    </button>
-                  </div>
+                {/* ACTION BUTTONS BELOW CARD */}
+                <div className="flex items-center justify-between w-full px-3 gap-3">
+                  <button
+                    onClick={() => restoreGame(game.id)}
+                    className="flex-1 px-4 py-2 rounded-md bg-green-100 text-green-700 hover:bg-green-200 transition"
+                  >
+                    Restore
+                  </button>
+
+                  <button
+                    onClick={() => deleteGame(game.id)}
+                    className="flex-1 px-4 py-2 rounded-md bg-red-100 text-red-700 hover:bg-red-200 transition"
+                  >
+                    Delete
+                  </button>
                 </div>
               </motion.div>
             ))}

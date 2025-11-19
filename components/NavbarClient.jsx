@@ -1,184 +1,128 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function NavbarClient() {
-  const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
   const [role, setRole] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-  const pathname = usePathname();
+
   const router = useRouter();
+  const pathname = usePathname();
 
-  // ✅ 1. Load cached role instantly (fixes delay bug)
+  // ---------------------------------------------
+  // TRUE SESSION LISTENER (No localStorage hacks)
+  // ---------------------------------------------
   useEffect(() => {
-    const cachedRole = localStorage.getItem("userRole");
-    if (cachedRole) {
-      console.log("💾 Cached role loaded instantly:", cachedRole);
-      setRole(cachedRole);
-    }
+    let mounted = true;
 
-    const fetchSessionAndRole = async () => {
-      console.log("🔍 Navbar: Fetching session...");
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+    const load = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        if (!session?.user) {
-          console.log("🚫 No session — logged out.");
-          setUser(null);
-          setRole(null);
-          localStorage.removeItem("userRole");
-          setLoading(false);
-          return;
-        }
+      if (!mounted) return;
 
-        setUser(session.user);
-        console.log("👤 Logged in:", session.user.email);
+      setSession(session);
 
-        // ✅ 2. Always confirm role with Supabase (but async)
-        const { data, error } = await supabase
+      if (session?.user) {
+        const { data } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", session.user.id)
           .maybeSingle();
 
-        if (error) throw error;
-        if (data?.role) {
-          console.log("✅ Role fetched:", data.role);
-          setRole(data.role);
-          localStorage.setItem("userRole", data.role);
-        } else {
-          console.warn("⚠️ No role found in profiles table.");
-        }
-      } catch (err) {
-        console.error("🔥 Navbar fetch error:", err.message);
-      } finally {
-        setLoading(false);
+        setRole(data?.role || "user");
       }
     };
 
-    fetchSessionAndRole();
+    load();
+
+    // Live session updates
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
+
+        if (newSession?.user) {
+          supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", newSession.user.id)
+            .maybeSingle()
+            .then((res) => setRole(res.data?.role || "user"));
+        } else {
+          setRole(null);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // ✅ Logout clears everything
+  // ---------------------------------------------
+  // Logout
+  // ---------------------------------------------
   const handleLogout = async () => {
-    console.log("🚪 Logging out...");
     await supabase.auth.signOut();
-    localStorage.removeItem("userRole");
-    setUser(null);
-    setRole(null);
     router.push("/login");
   };
 
-  // ✅ 3. Always get correct dashboard route
-  const getDashboardHref = () => {
-    const cachedRole = role || localStorage.getItem("userRole");
-    const href =
-      cachedRole === "admin"
-        ? "/dashboard"
-        : cachedRole === "user"
-        ? "/user-dashboard"
-        : "/user-dashboard";
-    console.log("🧭 Dashboard target:", href, "(role =", cachedRole, ")");
-    return href;
-  };
+  // ---------------------------------------------
+  // Routes
+  // ---------------------------------------------
+  const dashboardRoute = role === "admin" ? "/dashboard" : "/user-dashboard";
 
-  // ✅ Public navigation links
-  const publicLinks = [
-    { label: "Home", href: "/" },
-    { label: "Predictions", href: "/predictions" },
-    { label: "About", href: "/about" },
-    { label: "Contact", href: "/contact" },
+  const links = [
+    { href: "/", label: "Home" },
+    { href: "/predictions", label: "Predictions" },
+    { href: "/about", label: "About" },
+    { href: "/contact", label: "Contact" },
   ];
-
-  // ✅ Navbar style based on page
-  const isDashboard =
-    pathname.startsWith("/dashboard") || pathname.startsWith("/user-dashboard");
-
-  const navbarStyle = isDashboard
-    ? "bg-[#142B6F]"
-    : "bg-[#142B6F]/90 backdrop-blur-md shadow-md";
-
-  // ✅ Auto close mobile menu when clicking outside
-  useEffect(() => {
-    const closeMenu = (e) => {
-      if (menuOpen && !e.target.closest(".mobile-menu")) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", closeMenu);
-    return () => document.removeEventListener("mousedown", closeMenu);
-  }, [menuOpen]);
-
-  if (loading) {
-    return (
-      <div className="w-full h-14 fixed top-0 bg-[#142B6F] animate-pulse z-50" />
-    );
-  }
 
   return (
     <motion.nav
-      initial={{ y: -30, opacity: 0 }}
+      initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.4 }}
-      className={`${navbarStyle} fixed top-0 w-full z-50 flex items-center justify-between px-6 py-4`}
+      transition={{ duration: 0.35 }}
+      className="bg-[#142B6F]/95 backdrop-blur-md fixed top-0 w-full z-50 px-6 py-4 shadow-lg flex justify-between items-center"
     >
-      {/* 🔹 Logo */}
-      <Link
-        href="/"
-        onClick={() => setMenuOpen(false)}
-        className="text-[#FFD601] font-bold text-xl"
-      >
+      {/* Logo */}
+      <Link href="/" className="text-[#FFD601] text-xl font-bold">
         ⚽ Geniuz Prediction
       </Link>
 
-      {/* 🔹 Desktop Links */}
-      <div className="hidden md:flex items-center gap-6 text-white">
-        {publicLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`hover:text-[#FFD601] ${
-              pathname === link.href ? "text-[#FFD601]" : ""
-            }`}
-          >
+      {/* Desktop Links */}
+      <div className="hidden md:flex items-center gap-6 text-white font-medium">
+        {links.map((link) => (
+          <Link key={link.href} href={link.href}>
             {link.label}
           </Link>
         ))}
 
-        {/* Dashboard */}
-        {user && (
-          <Link
-            href={getDashboardHref()}
-            className={`hover:text-[#FFD601] ${
-              pathname.startsWith("/dashboard") ||
-              pathname.startsWith("/user-dashboard")
-                ? "text-[#FFD601]"
-                : ""
-            }`}
-          >
+        {session && (
+          <Link href={dashboardRoute} className="">
             Dashboard
           </Link>
         )}
 
-        {/* Auth buttons */}
-        {!user ? (
+        {!session ? (
           <>
             <Link
               href="/login"
-              className="bg-[#FFD601] text-[#142B6F] px-4 py-2 rounded-xl font-semibold hover:bg-yellow-400"
+              className="bg-[#FFD601] text-[#142B6F] px-4 py-2 rounded-xl font-semibold"
             >
               Login
             </Link>
             <Link
               href="/signup"
-              className="border border-[#FFD601] text-[#FFD601] px-4 py-2 rounded-xl font-semibold hover:bg-[#FFD601] hover:text-[#142B6F]"
+              className="border border-[#FFD601] text-[#FFD601] px-4 py-2 rounded-xl font-semibold"
             >
               Sign Up
             </Link>
@@ -186,67 +130,65 @@ export default function NavbarClient() {
         ) : (
           <button
             onClick={handleLogout}
-            className="bg-[#FFD601] text-[#142B6F] px-4 py-2 rounded-xl font-semibold hover:bg-yellow-400"
+            className="bg-[#FFD601] text-[#142B6F] px-4 py-2 rounded-xl font-semibold"
           >
             Logout
           </button>
         )}
       </div>
 
-      {/* 🔹 Mobile Toggle */}
+      {/* Mobile: Hamburger */}
       <button
-        className="md:hidden text-white text-2xl mobile-menu"
+        className="md:hidden text-white text-3xl"
         onClick={() => setMenuOpen(!menuOpen)}
       >
         {menuOpen ? "✕" : "☰"}
       </button>
 
-      {/* 🔹 Mobile Dropdown */}
+      {/* Mobile Menu */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, y: -15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.25 }}
-            className="absolute top-16 right-4 bg-[#1B308D]/95 border border-[#FFD601]/30 rounded-xl p-5 flex flex-col gap-3 md:hidden z-40 mobile-menu backdrop-blur-md"
+            className="absolute top-16 right-4 bg-[#1B308D]/95 p-5 rounded-xl 
+            border border-[#FFD601]/30 flex flex-col gap-3 md:hidden"
           >
-            {publicLinks.map((link) => (
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className={`text-white hover:text-[#FFD601] ${
-                  pathname === link.href ? "text-[#FFD601]" : ""
-                }`}
+                className="text-white"
               >
                 {link.label}
               </Link>
             ))}
 
-            {user && (
+            {session && (
               <Link
-                href={getDashboardHref()}
+                href={dashboardRoute}
+                className="text-[#FFD601]"
                 onClick={() => setMenuOpen(false)}
-                className="text-[#FFD601] font-semibold"
               >
                 Dashboard
               </Link>
             )}
 
-            {!user ? (
+            {!session ? (
               <>
                 <Link
                   href="/login"
                   onClick={() => setMenuOpen(false)}
-                  className="text-[#FFD601] font-semibold"
+                  className="text-[#FFD601]"
                 >
                   Login
                 </Link>
                 <Link
                   href="/signup"
                   onClick={() => setMenuOpen(false)}
-                  className="text-[#FFD601] font-semibold"
+                  className="text-[#FFD601]"
                 >
                   Sign Up
                 </Link>
@@ -257,7 +199,7 @@ export default function NavbarClient() {
                   setMenuOpen(false);
                   handleLogout();
                 }}
-                className="bg-[#FFD601] text-[#142B6F] px-4 py-2 rounded-xl font-semibold"
+                className="bg-[#FFD601] text-[#142B6F] px-3 py-1 rounded-lg"
               >
                 Logout
               </button>

@@ -1,11 +1,10 @@
 "use client";
-import useLoading from "@/hooks/useLoading";
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState } from "react";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 
 export default function DashboardHome() {
+  // ✅ Still keep role guard to block non-admins at UI level
   useRoleGuard();
 
   const [dashboardData, setDashboardData] = useState({
@@ -19,109 +18,42 @@ export default function DashboardHome() {
   });
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        setError("");
         setLoading(true);
 
-        // ✅ 1. Total users
-        const { count: totalUsers, error: usersError } = await supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true });
-        if (usersError) throw usersError;
+        const response = await fetch("/api/admin/dashboard", {
+          method: "GET",
+          headers: {
+            // ⚠️ This header is only checked on the server.
+            // Make sure ADMIN_KEY in .env matches NEXT_PUBLIC_ADMIN_KEY.
+            "x-admin-key": process.env.NEXT_PUBLIC_ADMIN_KEY || "",
+          },
+        });
 
-        // ✅ 2. Fetch all games (we’ll analyze statuses manually)
-        const { data: allGames, error: gamesError } = await supabase
-          .from("games")
-          .select("id, match_data, status, archived_at, created_at");
-        if (gamesError) throw gamesError;
-
-        const now = new Date();
-        const threeDaysAgo = new Date(
-          now.getTime() - 3 * 24 * 60 * 60 * 1000
-        ).toISOString();
-
-        // ✅ Total games
-        const totalGames = allGames.length;
-
-        // ✅ Active = still has at least one pending match
-        const activeGames = allGames.filter((g) =>
-          (g.match_data || []).some(
-            (m) => m.status?.toLowerCase() === "pending"
-          )
-        ).length;
-
-        // ✅ Archived = status = archived and archived_at < 3 days ago
-        const archivedGames = allGames.filter(
-          (g) =>
-            g.status === "archived" &&
-            (!g.archived_at || g.archived_at > threeDaysAgo)
-        ).length;
-
-        // ✅ Auto-deleted = archived more than 3 days ago
-        const autoDeletedCandidates = allGames.filter(
-          (g) => g.status === "archived" && g.archived_at < threeDaysAgo
-        );
-
-        const autoDeletedGames = autoDeletedCandidates.length;
-
-        // 🧹 Auto-delete from DB
-        if (autoDeletedCandidates.length > 0) {
-          const idsToDelete = autoDeletedCandidates.map((g) => g.id);
-          const { error: deleteError } = await supabase
-            .from("games")
-            .delete()
-            .in("id", idsToDelete);
-
-          if (deleteError)
-            console.error("Auto-delete failed:", deleteError.message);
-          else
-            console.log(
-              `🗑️ Auto-deleted ${idsToDelete.length} archived games older than 3 days`
-            );
+        if (!response.ok) {
+          throw new Error(`Failed to load dashboard: ${response.status}`);
         }
 
-        // ✅ 3. Total orders
-        const { count: totalOrders, error: ordersError } = await supabase
-          .from("orders")
-          .select("*", { count: "exact", head: true });
-        if (ordersError) throw ordersError;
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
 
-        // ✅ 4. Recent orders
-        const { data: recentOrders, error: recentError } = await supabase
-          .from("orders")
-          .select(
-            `
-            id,
-            user_id,
-            amount,
-            currency,
-            status,
-            paystack_ref,
-            created_at,
-            profiles (
-              full_name,
-              email
-            )
-          `
-          )
-          .order("created_at", { ascending: false })
-          .limit(5);
-        if (recentError) throw recentError;
-
-        // ✅ Update dashboard state
         setDashboardData({
-          totalUsers: totalUsers || 0,
-          totalGames,
-          activeGames,
-          archivedGames,
-          autoDeletedGames,
-          totalOrders: totalOrders || 0,
-          recentOrders: recentOrders || [],
+          totalUsers: data.totalUsers ?? 0,
+          totalGames: data.totalGames ?? 0,
+          activeGames: data.activeGames ?? 0,
+          archivedGames: data.archivedGames ?? 0,
+          autoDeletedGames: data.autoDeletedGames ?? 0,
+          totalOrders: data.totalOrders ?? 0,
+          recentOrders: data.recentOrders ?? [],
         });
       } catch (err) {
-        console.error("Error loading dashboard:", err.message);
+        console.error("Error loading dashboard:", err);
+        setError(err.message || "Failed to load dashboard");
       } finally {
         setLoading(false);
       }
@@ -189,11 +121,16 @@ export default function DashboardHome() {
         <h1 className="text-3xl font-semibold text-[#FFD601] mb-2">
           Dashboard Overview
         </h1>
-        <p className="text-gray-300 text-sm">
-          {loading
-            ? "Loading data..."
-            : "Welcome back! Here’s what’s happening today."}
-        </p>
+
+        {error ? (
+          <p className="text-red-300 text-sm">{error}</p>
+        ) : (
+          <p className="text-gray-300 text-sm">
+            {loading
+              ? "Loading data..."
+              : "Welcome back! Here’s what’s happening today."}
+          </p>
+        )}
       </motion.div>
 
       {/* STATS GRID */}
@@ -211,10 +148,8 @@ export default function DashboardHome() {
             <p className="text-3xl font-bold">
               {loading ? "..." : stat.value.toLocaleString()}
             </p>
-            {stat.sub && (
-              <p className="text-xs opacity-80 mt-1 leading-5">
-                {loading ? "" : stat.sub}
-              </p>
+            {stat.sub && !loading && (
+              <p className="text-xs opacity-80 mt-1 leading-5">{stat.sub}</p>
             )}
           </motion.div>
         ))}
