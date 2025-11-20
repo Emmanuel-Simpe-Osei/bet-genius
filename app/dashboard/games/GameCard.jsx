@@ -26,16 +26,16 @@ export default function GameCard({
   const [deleting, setDeleting] = useState(false);
   const [mainStatus, setMainStatus] = useState(game.status || "active");
 
-  // NEW PURCHASE FLAG based on purchase_count
+  // NEW PURCHASE FLAG (using game.purchases)
   const [isPurchased, setIsPurchased] = useState(false);
 
   useEffect(() => {
-    setIsPurchased((game.purchase_count || 0) > 0);
-  }, [game.purchase_count]);
+    setIsPurchased((game.purchases || 0) > 0);
+  }, [game.purchases]);
 
   const [showArchiveModal, setShowArchiveModal] = useState(false);
 
-  // Game types options
+  // Game type options
   const gameTypes = [
     { label: "Free", value: "free" },
     { label: "VIP", value: "vip" },
@@ -45,21 +45,20 @@ export default function GameCard({
     { label: "Recovery", value: "recovery" },
   ];
 
-  // store backup before editing
+  // Backup before editing
   useEffect(() => {
     if (!archivedMode && editing) {
       setOriginalMatches(JSON.parse(JSON.stringify(matches)));
     }
   }, [editing, archivedMode]);
 
-  // Handle match status updates
+  // Handle match status changes
   const handleMatchStatusChange = (index, newStatus) => {
     if (archivedMode) return;
 
     const updated = matches.map((m, i) =>
       i === index ? { ...m, status: newStatus } : m
     );
-
     setMatches(updated);
 
     const allResolved = updated.every((m) =>
@@ -96,19 +95,17 @@ export default function GameCard({
     }
   };
 
-  // Cancel archive action
   const cancelArchive = () => {
     setMatches(originalMatches);
     showToast?.("Archive cancelled. Changes reverted.", "info");
     setShowArchiveModal(false);
   };
 
-  // Save game updates
+  // Save
   const saveChanges = async () => {
     if (archivedMode) return;
 
     setSaving(true);
-
     try {
       const res = await fetch("/api/games/update", {
         method: "POST",
@@ -134,13 +131,12 @@ export default function GameCard({
     }
   };
 
-  // Delete game
+  // Delete
   const deleteGame = async () => {
     if (archivedMode) return;
     if (!confirm("Delete this game?")) return;
 
     setDeleting(true);
-
     try {
       const res = await fetch("/api/games/delete", {
         method: "POST",
@@ -159,7 +155,6 @@ export default function GameCard({
     }
   };
 
-  // Generic helpers
   const statusColor = (s) =>
     s === "Won"
       ? "text-green-400"
@@ -178,7 +173,7 @@ export default function GameCard({
     `${m.homeTeam}-${m.awayTeam}-${i}`.replace(/\s+/g, "-");
 
   // ---------------------------------------------------
-  // **RENDERING**
+  // UI Rendering
   // ---------------------------------------------------
   return (
     <>
@@ -196,11 +191,11 @@ export default function GameCard({
         {/* PURCHASE TAG */}
         {isPurchased && (
           <div className="absolute top-2 right-2 bg-green-600 text-white text-xs px-2 py-1 rounded">
-            Purchased ({game.purchase_count || 0})
+            Purchased ({game.purchases || 0})
           </div>
         )}
 
-        {/* ---------- HEADER ---------- */}
+        {/* HEADER */}
         <div className="p-4 border-b" style={{ borderColor: `${GOLD}33` }}>
           {!editing || archivedMode ? (
             <div className="flex justify-between items-start">
@@ -214,7 +209,7 @@ export default function GameCard({
                 </div>
 
                 <div className="text-[10px] opacity-60 mt-1">
-                  Purchases: {game.purchase_count || 0}
+                  Purchases: {game.purchases || 0}
                 </div>
               </div>
 
@@ -226,7 +221,7 @@ export default function GameCard({
               </div>
             </div>
           ) : (
-            // EDIT MODE
+            // EDITING MODE
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={gameType}
@@ -263,7 +258,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* ---------- STATUS BAR ---------- */}
+        {/* STATUS BAR */}
         <div
           className="px-4 py-2 flex justify-between text-xs border-b"
           style={{ borderColor: `${GOLD}22`, backgroundColor: "#1A308D" }}
@@ -315,7 +310,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* ---------- MATCH DATA ---------- */}
+        {/* MATCHES */}
         <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
           {matches.length === 0 && (
             <p className="text-xs text-white/70 text-center">
@@ -355,7 +350,7 @@ export default function GameCard({
           ))}
         </div>
 
-        {/* ---------- FOOTER ---------- */}
+        {/* FOOTER */}
         <div
           className="p-3 flex justify-between text-xs border-t"
           style={{ borderColor: `${GOLD}22` }}
@@ -372,7 +367,7 @@ export default function GameCard({
         </div>
       </motion.div>
 
-      {/* ---------- ARCHIVE MODAL ---------- */}
+      {/* ARCHIVE MODAL */}
       {!archivedMode && (
         <AnimatePresence>
           {showArchiveModal && (
