@@ -12,7 +12,7 @@ export default function GameCard({
   onStatusChange,
   onDelete,
   showToast,
-  archivedMode = false, // 👈 IMPORTANT
+  archivedMode = false,
 }) {
   const [editing, setEditing] = useState(false);
   const [matches, setMatches] = useState(game.match_data || []);
@@ -23,25 +23,17 @@ export default function GameCard({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mainStatus, setMainStatus] = useState(game.status || "active");
+
   const [isPurchased, setIsPurchased] = useState(false);
 
-  // Modal state for archive confirmation
   const [showArchiveModal, setShowArchiveModal] = useState(false);
 
-  // 🔍 Check if purchased (only when NOT archivedMode)
+  // ------------------------------------------------------------
+  // NEW PURCHASE CHECK — Using purchase_count from API
+  // ------------------------------------------------------------
   useEffect(() => {
-    if (archivedMode) return;
-
-    (async () => {
-      try {
-        const res = await fetch(`/api/purchase/check?gameId=${game.id}`);
-        const data = await res.json();
-        setIsPurchased(data?.purchased ?? false);
-      } catch (_) {
-        // ignore
-      }
-    })();
-  }, [game.id, archivedMode]);
+    setIsPurchased((game.purchase_count || 0) > 0);
+  }, [game.purchase_count]);
 
   const gameTypes = [
     { label: "Free", value: "free" },
@@ -52,40 +44,35 @@ export default function GameCard({
     { label: "Recovery", value: "recovery" },
   ];
 
-  // -----------------------------------------
-  // STATUS CHANGE HANDLER (only active in normal mode)
-  // -----------------------------------------
+  // Save original matches so we can restore when cancelled
+  useEffect(() => {
+    if (editing && !archivedMode) {
+      setOriginalMatches(JSON.parse(JSON.stringify(matches)));
+    }
+  }, [editing, archivedMode, matches]);
+
   const handleMatchStatusChange = (index, newStatus) => {
-    if (archivedMode) return; // safety
+    if (archivedMode) return;
 
     const updated = matches.map((m, i) =>
       i === index ? { ...m, status: newStatus } : m
     );
+
     setMatches(updated);
 
     const allResolved =
       updated.length > 0 &&
       updated.every((m) => ["won", "lost"].includes(m.status?.toLowerCase?.()));
+
     const hasPending = updated.some(
       (m) => m.status?.toLowerCase?.() === "pending"
     );
 
     if (allResolved && !hasPending) {
-      // All matches resolved → ask admin if we should archive
       setShowArchiveModal(true);
     }
   };
 
-  // Save original matches when entering edit mode
-  useEffect(() => {
-    if (!archivedMode && editing) {
-      setOriginalMatches(JSON.parse(JSON.stringify(matches)));
-    }
-  }, [editing, archivedMode, matches]);
-
-  // -----------------------------------------
-  // CONFIRM ARCHIVE (normal admin flow)
-  // -----------------------------------------
   const confirmArchive = async () => {
     try {
       const res = await fetch("/api/games/archive", {
@@ -107,18 +94,13 @@ export default function GameCard({
   };
 
   const cancelArchive = () => {
-    // Revert back to state before editing
     setMatches(originalMatches);
-    setShowArchiveModal(false);
     showToast?.("Archive cancelled. Changes reverted.", "info");
+    setShowArchiveModal(false);
   };
 
-  // -----------------------------------------
-  // SAVE GAME CHANGES (only in normal mode)
-  // -----------------------------------------
   const saveChanges = async () => {
     if (archivedMode) return;
-
     setSaving(true);
     try {
       const res = await fetch("/api/games/update", {
@@ -145,9 +127,6 @@ export default function GameCard({
     }
   };
 
-  // -----------------------------------------
-  // DELETE GAME (only in normal mode)
-  // -----------------------------------------
   const deleteGame = async () => {
     if (archivedMode) return;
     if (!confirm("Delete this game?")) return;
@@ -186,17 +165,10 @@ export default function GameCard({
   );
 
   const getMatchKey = (m, i) =>
-    `${m.homeTeam ?? "Team A"}-${m.awayTeam ?? "Team B"}-${i}`.replace(
-      /\s+/g,
-      "-"
-    );
+    `${m.homeTeam}-${m.awayTeam}-${i}`.replace(/\s+/g, "-");
 
-  // -----------------------------------------
-  // RENDER
-  // -----------------------------------------
   return (
     <>
-      {/* MAIN CARD */}
       <motion.div
         layout
         initial={{ opacity: 0, scale: 0.96 }}
@@ -208,10 +180,10 @@ export default function GameCard({
           borderColor: `${GOLD}33`,
         }}
       >
-        {/* PURCHASE TAG (also visible in archived if you want history) */}
+        {/* PURCHASE TAG */}
         {isPurchased && (
           <div className="absolute top-2 right-2 bg-green-600 text-white text-xs px-2 py-1 rounded">
-            Purchased
+            Purchased ({game.purchase_count || 0})
           </div>
         )}
 
@@ -221,10 +193,15 @@ export default function GameCard({
             <div className="flex justify-between items-start">
               <div>
                 <div className="inline-block px-2 py-1 bg-[#FFD601] text-[#142B6F] rounded text-xs font-bold">
-                  {String(gameType || "").toUpperCase()}
+                  {String(gameType).toUpperCase()}
                 </div>
+
                 <div className="text-xs opacity-70 mt-1">
                   Booking: {game.booking_code}
+                </div>
+
+                <div className="text-[10px] opacity-60 mt-1">
+                  Purchases: {game.purchase_count || 0}
                 </div>
               </div>
 
@@ -236,7 +213,6 @@ export default function GameCard({
               </div>
             </div>
           ) : (
-            // EDIT MODE (only for non-archived)
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={gameType}
@@ -273,7 +249,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* STATUS & ACTION */}
+        {/* STATUS BAR */}
         <div
           className="px-4 py-2 flex justify-between text-xs border-b"
           style={{ borderColor: `${GOLD}22`, backgroundColor: "#1A308D" }}
@@ -284,7 +260,6 @@ export default function GameCard({
             <span>⏳ {statusCounts.Pending}</span>
           </div>
 
-          {/* No edit controls in archived mode */}
           {!archivedMode && !editing && (
             <button
               onClick={() => setEditing(true)}
@@ -295,7 +270,7 @@ export default function GameCard({
             </button>
           )}
 
-          {!archivedMode && editing && (
+          {editing && !archivedMode && (
             <div className="flex gap-2">
               <button
                 onClick={saveChanges}
@@ -326,7 +301,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* MATCHES */}
+        {/* MATCHES LIST */}
         <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
           {matches.length === 0 && (
             <p className="text-xs text-white/70 text-center">
@@ -347,7 +322,6 @@ export default function GameCard({
                 {m.league && <p className="text-xs opacity-70">{m.league}</p>}
               </div>
 
-              {/* In archived mode: always static icons */}
               {archivedMode || !editing ? (
                 <span className={`text-lg ${statusColor(m.status)}`}>
                   {statusIcon(m.status)}
@@ -385,7 +359,7 @@ export default function GameCard({
         </div>
       </motion.div>
 
-      {/* ARCHIVE CONFIRM MODAL — ONLY IN NORMAL MODE */}
+      {/* ARCHIVE MODAL */}
       {!archivedMode && (
         <AnimatePresence>
           {showArchiveModal && (
