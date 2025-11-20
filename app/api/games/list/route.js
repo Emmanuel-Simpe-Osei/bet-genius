@@ -3,7 +3,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 
 export async function GET() {
   try {
-    // Fetch games + count purchases
+    // Fetch games + count from the orders table
     const { data, error } = await supabaseAdmin
       .from("games")
       .select(
@@ -19,15 +19,15 @@ export async function GET() {
         created_at,
         updated_at,
         archived_at,
-        purchases:orders(count)
+        orders:orders(count)
       `
       )
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
-    // Flatten and normalize results
-    const clean = (data || []).map((g) => ({
+    // Flatten into clean objects
+    const games = (data || []).map((g) => ({
       id: g.id,
       game_name: g.game_name,
       game_type: g.game_type,
@@ -40,12 +40,11 @@ export async function GET() {
       updated_at: g.updated_at,
       archived_at: g.archived_at,
 
-      // IMPORTANT → flatten the count
-      purchase_count:
-        g.purchases?.[0]?.count !== undefined ? g.purchases[0].count : 0,
+      // 👇 purchase count from orders
+      purchase_count: g.orders?.[0]?.count || 0,
     }));
 
-    return NextResponse.json({ games: clean });
+    return NextResponse.json({ games });
   } catch (err) {
     console.error("❌ LIST ERROR:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

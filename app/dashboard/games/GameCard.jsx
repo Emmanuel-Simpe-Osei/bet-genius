@@ -17,24 +17,25 @@ export default function GameCard({
   const [editing, setEditing] = useState(false);
   const [matches, setMatches] = useState(game.match_data || []);
   const [originalMatches, setOriginalMatches] = useState(game.match_data || []);
+
   const [totalOdds, setTotalOdds] = useState(game.total_odds || 0);
   const [price, setPrice] = useState(game.price || 0);
   const [gameType, setGameType] = useState(game.game_type || "free");
+
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mainStatus, setMainStatus] = useState(game.status || "active");
 
+  // NEW PURCHASE FLAG based on purchase_count
   const [isPurchased, setIsPurchased] = useState(false);
 
-  const [showArchiveModal, setShowArchiveModal] = useState(false);
-
-  // ------------------------------------------------------------
-  // NEW PURCHASE CHECK — Using purchase_count from API
-  // ------------------------------------------------------------
   useEffect(() => {
     setIsPurchased((game.purchase_count || 0) > 0);
   }, [game.purchase_count]);
 
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+
+  // Game types options
   const gameTypes = [
     { label: "Free", value: "free" },
     { label: "VIP", value: "vip" },
@@ -44,13 +45,14 @@ export default function GameCard({
     { label: "Recovery", value: "recovery" },
   ];
 
-  // Save original matches so we can restore when cancelled
+  // store backup before editing
   useEffect(() => {
-    if (editing && !archivedMode) {
+    if (!archivedMode && editing) {
       setOriginalMatches(JSON.parse(JSON.stringify(matches)));
     }
-  }, [editing, archivedMode, matches]);
+  }, [editing, archivedMode]);
 
+  // Handle match status updates
   const handleMatchStatusChange = (index, newStatus) => {
     if (archivedMode) return;
 
@@ -60,9 +62,9 @@ export default function GameCard({
 
     setMatches(updated);
 
-    const allResolved =
-      updated.length > 0 &&
-      updated.every((m) => ["won", "lost"].includes(m.status?.toLowerCase?.()));
+    const allResolved = updated.every((m) =>
+      ["won", "lost"].includes(m.status?.toLowerCase?.())
+    );
 
     const hasPending = updated.some(
       (m) => m.status?.toLowerCase?.() === "pending"
@@ -73,6 +75,7 @@ export default function GameCard({
     }
   };
 
+  // Confirm archive
   const confirmArchive = async () => {
     try {
       const res = await fetch("/api/games/archive", {
@@ -93,15 +96,19 @@ export default function GameCard({
     }
   };
 
+  // Cancel archive action
   const cancelArchive = () => {
     setMatches(originalMatches);
     showToast?.("Archive cancelled. Changes reverted.", "info");
     setShowArchiveModal(false);
   };
 
+  // Save game updates
   const saveChanges = async () => {
     if (archivedMode) return;
+
     setSaving(true);
+
     try {
       const res = await fetch("/api/games/update", {
         method: "POST",
@@ -127,11 +134,13 @@ export default function GameCard({
     }
   };
 
+  // Delete game
   const deleteGame = async () => {
     if (archivedMode) return;
     if (!confirm("Delete this game?")) return;
 
     setDeleting(true);
+
     try {
       const res = await fetch("/api/games/delete", {
         method: "POST",
@@ -150,6 +159,7 @@ export default function GameCard({
     }
   };
 
+  // Generic helpers
   const statusColor = (s) =>
     s === "Won"
       ? "text-green-400"
@@ -167,6 +177,9 @@ export default function GameCard({
   const getMatchKey = (m, i) =>
     `${m.homeTeam}-${m.awayTeam}-${i}`.replace(/\s+/g, "-");
 
+  // ---------------------------------------------------
+  // **RENDERING**
+  // ---------------------------------------------------
   return (
     <>
       <motion.div
@@ -187,7 +200,7 @@ export default function GameCard({
           </div>
         )}
 
-        {/* HEADER */}
+        {/* ---------- HEADER ---------- */}
         <div className="p-4 border-b" style={{ borderColor: `${GOLD}33` }}>
           {!editing || archivedMode ? (
             <div className="flex justify-between items-start">
@@ -213,6 +226,7 @@ export default function GameCard({
               </div>
             </div>
           ) : (
+            // EDIT MODE
             <div className="grid grid-cols-2 gap-3">
               <select
                 value={gameType}
@@ -249,7 +263,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* STATUS BAR */}
+        {/* ---------- STATUS BAR ---------- */}
         <div
           className="px-4 py-2 flex justify-between text-xs border-b"
           style={{ borderColor: `${GOLD}22`, backgroundColor: "#1A308D" }}
@@ -301,7 +315,7 @@ export default function GameCard({
           )}
         </div>
 
-        {/* MATCHES LIST */}
+        {/* ---------- MATCH DATA ---------- */}
         <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
           {matches.length === 0 && (
             <p className="text-xs text-white/70 text-center">
@@ -341,7 +355,7 @@ export default function GameCard({
           ))}
         </div>
 
-        {/* FOOTER */}
+        {/* ---------- FOOTER ---------- */}
         <div
           className="p-3 flex justify-between text-xs border-t"
           style={{ borderColor: `${GOLD}22` }}
@@ -351,15 +365,14 @@ export default function GameCard({
               ? new Date(game.created_at).toLocaleDateString()
               : "Unknown date"}
           </span>
+
           <span className="px-2 py-1 rounded capitalize bg-white/10">
-            {mainStatus ||
-              game.status ||
-              (archivedMode ? "archived" : "active")}
+            {mainStatus}
           </span>
         </div>
       </motion.div>
 
-      {/* ARCHIVE MODAL */}
+      {/* ---------- ARCHIVE MODAL ---------- */}
       {!archivedMode && (
         <AnimatePresence>
           {showArchiveModal && (
@@ -378,6 +391,7 @@ export default function GameCard({
                 <h3 className="text-lg font-bold text-[#FFD601] mb-3">
                   Archive Game?
                 </h3>
+
                 <p className="text-sm mb-6">
                   All matches are resolved. Do you want to move this game to the
                   archive?
