@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
-// 🚀 Upload new game (Admin only)
+// 🚀 Upload a new game (Admin Only)
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -12,21 +12,39 @@ export async function POST(req) {
       game_name,
       total_odds,
       price,
-      status,
       match_data,
-      created_at,
-      updated_at,
+      game_date,
     } = body;
 
-    // 🔒 Validate
-    if (!booking_code || !match_data || match_data.length === 0) {
+    // ----------------------------------------
+    // 🛑 VALIDATION
+    // ----------------------------------------
+    if (!booking_code) {
       return NextResponse.json(
-        { error: "Missing booking code or matches" },
+        { error: "Booking code is required" },
         { status: 400 }
       );
     }
 
-    // 🧨 Insert new game
+    if (!match_data || match_data.length === 0) {
+      return NextResponse.json(
+        { error: "Match data is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!game_name) {
+      return NextResponse.json(
+        { error: "Game name is required" },
+        { status: 400 }
+      );
+    }
+
+    // ----------------------------------------
+    // 🚀 INSERT NEW GAME
+    // Status MUST be ACTIVE so users see the game
+    // archived_at MUST be null
+    // ----------------------------------------
     const { data, error } = await supabaseAdmin
       .from("games")
       .insert([
@@ -36,23 +54,30 @@ export async function POST(req) {
           game_name,
           total_odds,
           price,
-          status,
           match_data,
-          created_at,
-          updated_at,
+          game_date,
+
+          // ⭐ ALWAYS make new games visible
+          status: "active",
+          archived_at: null,
         },
       ])
       .select()
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("UPLOAD GAME ERROR →", error);
+      return NextResponse.json(
+        { error: "Failed to upload game: " + error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true, game: data }, { status: 200 });
   } catch (err) {
+    console.error("SERVER ERROR →", err);
     return NextResponse.json(
-      { error: "Server Error: " + err.message },
+      { error: "Server error: " + err.message },
       { status: 500 }
     );
   }
