@@ -1,13 +1,13 @@
 // app/api/purchase/init/route.js
 import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 
 export async function POST(req) {
   try {
     const { gameId } = await req.json();
-    const supabase = await createSupabaseRouteClient();
 
+    const supabase = await createSupabaseRouteClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -16,16 +16,12 @@ export async function POST(req) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // Get game
-    const { data: game, error: gameError } = await supabaseAdmin
+    // Fetch game
+    const { data: game } = await supabaseAdmin
       .from("games")
       .select("id, price, booking_code, game_name")
       .eq("id", gameId)
       .single();
-
-    if (gameError || !game) {
-      return NextResponse.json({ error: "Game not found" }, { status: 404 });
-    }
 
     // Create Paystack session
     const paystackRes = await fetch(
@@ -38,10 +34,10 @@ export async function POST(req) {
         },
         body: JSON.stringify({
           email: user.email,
-          amount: Math.round(Number(game.price) * 100),
+          amount: Number(game.price) * 100,
           metadata: {
-            userId: user.id, // ✅ FIXED
-            gameId: game.id, // ✅ FIXED
+            userId: user.id,
+            gameId: game.id,
             booking_code: game.booking_code,
           },
           callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/purchase/callback`,
@@ -49,17 +45,10 @@ export async function POST(req) {
       }
     );
 
-    const paystackJson = await paystackRes.json();
-
-    if (!paystackJson.status) {
-      return NextResponse.json(
-        { error: paystackJson.message },
-        { status: 500 }
-      );
-    }
+    const data = await paystackRes.json();
 
     return NextResponse.json({
-      authorizationUrl: paystackJson.data.authorization_url,
+      authorizationUrl: data.data.authorization_url,
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
