@@ -1,11 +1,8 @@
-//--------------------------------------------------------------
-// /user-dashboard/recovery
-// Shows only Recovery-type purchases
-//--------------------------------------------------------------
-
+// app/user-dashboard/recovery/page.jsx
 import Link from "next/link";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
+import { RefreshCw, ExternalLink, Shield, Calendar } from "lucide-react";
 
 const NAVY = "#0B1A4A";
 const GOLD = "#FFD601";
@@ -62,7 +59,6 @@ async function getRecoveryPurchases() {
     }
   }
 
-  // Only keep games whose type includes "recovery"
   const tickets = orders
     .map((o) => {
       const game = gamesById[o.game_id] || {};
@@ -92,94 +88,117 @@ export default async function RecoveryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold text-white">
-            Recovery <span style={{ color: GOLD }}>Center</span>
+          <h2 className="text-3xl font-black text-white">
+            Recovery <span style={{ color: GOLD }}>Center</span> 🛡️
           </h2>
-          <p className="text-xs md:text-sm text-[#AFC3FF] mt-1">
+          <p className="text-sm text-[#AFC3FF]/80 mt-2 max-w-2xl">
             When a VIP slip fails and you buy a recovery ticket, the details
-            appear here. Booking codes are visible only to you.
+            appear here. Booking codes are visible only to you in this secure
+            dashboard.
           </p>
         </div>
 
         <Link
           href="/predictions"
-          className="inline-flex items-center justify-center px-5 py-2 rounded-full text-xs md:text-sm font-semibold bg-[#FFD601] text-[#0B1A4A] hover:bg-yellow-400 transition"
+          className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-sm font-semibold bg-gradient-to-r from-[#FFD601] to-[#FFE769] text-[#0B1A4A] hover:shadow-lg hover:shadow-[#FFD601]/25 transition-all duration-200"
         >
-          Buy recovery ticket →
+          <RefreshCw size={16} />
+          Buy Recovery Ticket
+          <ExternalLink size={14} />
         </Link>
       </div>
 
+      {/* Empty State */}
       {tickets.length === 0 && (
-        <div className="mt-4 rounded-2xl border border-[#1c2b66] bg-[#0F1E4D] p-6 text-center">
+        <div className="mt-4 rounded-3xl border border-[#1c2b66]/50 bg-gradient-to-br from-[#0F1E4D] to-[#152862] p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
+            <Shield size={24} className="text-[#AFC3FF]" />
+          </div>
           <p className="text-sm text-[#AFC3FF]">No recovery tickets yet.</p>
-          <p className="text-xs text-[#AFC3FF] mt-1">
+          <p className="text-xs text-[#AFC3FF]/80 mt-1">
             If a VIP slip fails and you buy a recovery game, it will show up
             here with its booking code.
           </p>
         </div>
       )}
 
+      {/* Recovery Tickets List */}
       {tickets.length > 0 && (
         <div className="space-y-4">
           {tickets.map((t) => (
             <div
               key={t.id}
-              className="rounded-3xl bg-[#0F1E4D] border border-[#1c2b66] p-4 md:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+              className="rounded-3xl bg-gradient-to-br from-[#0F1E4D] to-[#152862] border border-[#1c2b66]/50 p-6 hover:border-[#FFD601]/30 transition-all duration-300 group"
             >
-              <div className="flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs uppercase tracking-wide text-[#AFC3FF]">
-                    Recovery
-                  </span>
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-[#255142] text-[#c1ffe0]">
-                    {t.status === "paid" ? "Active" : t.status}
-                  </span>
-                </div>
-
-                <h3 className="mt-1 text-sm md:text-base font-semibold text-white">
-                  {t.gameName}
-                </h3>
-
-                <p className="mt-1 text-[11px] text-[#AFC3FF]">
-                  Purchased:{" "}
-                  <span className="font-medium">{formatDate(t.createdAt)}</span>
-                  {t.gameDate && (
-                    <>
-                      {" • "}Game Date:{" "}
-                      <span className="font-medium">
-                        {formatDate(t.gameDate)}
-                      </span>
-                    </>
-                  )}
-                </p>
-
-                <p className="mt-2 text-xs text-[#AFC3FF]">
-                  Booking Code:{" "}
-                  <span
-                    className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-semibold"
-                    style={{ backgroundColor: GOLD, color: NAVY }}
-                  >
-                    {t.bookingCode}
-                  </span>
-                </p>
-              </div>
-
-              <div className="w-full md:w-auto md:text-right">
-                <div className="text-xs text-[#AFC3FF]">Ticket Value</div>
-                <div
-                  className="text-lg font-extrabold leading-tight"
-                  style={{ color: GOLD }}
-                >
-                  {t.currency} {Number(t.amount || 0).toLocaleString()}
-                </div>
-                {t.paystackRef && (
-                  <div className="mt-1 text-[10px] text-[#AFC3FF]">
-                    Ref:{" "}
-                    <span className="font-mono break-all">{t.paystackRef}</span>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                {/* Left Content */}
+                <div className="flex-1 space-y-4">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white/10 text-[#AFC3FF] border border-[#1c2b66]">
+                      Recovery
+                    </span>
+                    <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-300 border border-green-500/30">
+                      {t.status === "paid" ? "Active 🟢" : t.status}
+                    </span>
                   </div>
-                )}
+
+                  {/* Game Info */}
+                  <div>
+                    <h3 className="text-lg font-bold text-white group-hover:text-[#FFD601] transition-colors">
+                      {t.gameName}
+                    </h3>
+
+                    <div className="flex items-center gap-4 mt-2 text-xs text-[#AFC3FF]/80 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <Calendar size={12} />
+                        <span>Purchased: {formatDate(t.createdAt)}</span>
+                      </div>
+                      {t.gameDate && (
+                        <div className="flex items-center gap-1">
+                          <span>•</span>
+                          <span>Game Date: {formatDate(t.gameDate)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Booking Code */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-[#AFC3FF]">
+                      Booking Code:
+                    </span>
+                    <span
+                      className="px-4 py-2 rounded-2xl text-sm font-black tracking-wider"
+                      style={{ backgroundColor: GOLD, color: NAVY }}
+                    >
+                      {t.bookingCode}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right Content */}
+                <div className="lg:text-right space-y-2">
+                  <div className="text-sm text-[#AFC3FF]">Ticket Value</div>
+                  <div
+                    className="text-2xl font-black leading-tight"
+                    style={{ color: GOLD }}
+                  >
+                    {t.currency} {Number(t.amount || 0).toLocaleString()}
+                  </div>
+
+                  {t.paystackRef && (
+                    <div className="mt-2 text-xs text-[#AFC3FF]/60">
+                      Ref:{" "}
+                      <span className="font-mono bg-white/5 px-2 py-1 rounded-lg">
+                        {t.paystackRef}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}
