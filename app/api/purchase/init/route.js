@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
+import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req) {
   try {
-    const { gameId } = await req.json();
+    const body = await req.json();
+    const { gameId } = body;
 
-    const supabase = await createSupabaseRouteClient();
+    if (!gameId) {
+      return NextResponse.json({ error: "Game ID missing" }, { status: 400 });
+    }
+
+    // 1️⃣ Create route-level Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    // 2️⃣ Get logged-in user
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -15,17 +26,21 @@ export async function POST(req) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // Fetch game
-    const { data: game } = await supabaseAdmin
+    // 3️⃣ Fetch game details
+    const { data: game, error: gameError } = await supabaseAdmin
       .from("games")
       .select("id, price, booking_code, game_name")
       .eq("id", gameId)
       .single();
 
-    if (!game) {
+    if (gameError || !game) {
       return NextResponse.json({ error: "Game not found" }, { status: 404 });
     }
 
+    // 4️⃣ Calculate price in pesewas
+    const amount = Math.round(Number(game.price) * 100);
+
+    // 5️⃣ Initialize Paystack transaction
     const paystackRes = await fetch(
       "https://api.paystack.co/transaction/initialize",
       {
@@ -36,7 +51,7 @@ export async function POST(req) {
         },
         body: JSON.stringify({
           email: user.email,
-          amount: Math.round(Number(game.price) * 100),
+          amount,
           metadata: {
             gameId: game.id,
             userId: user.id,
@@ -55,11 +70,15 @@ export async function POST(req) {
       );
     }
 
+    // 6️⃣ Return authorization URL to frontend
     return NextResponse.json({
       authorizationUrl: paystackJson.data.authorization_url,
     });
   } catch (err) {
-    console.error("INIT ERROR:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("INIT ROUTE ERROR:", err);
+    return NextResponse.json(
+      { error: "Server error: " + err.message },
+      { status: 500 }
+    );
   }
 }

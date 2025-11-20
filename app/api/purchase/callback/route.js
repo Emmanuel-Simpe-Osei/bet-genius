@@ -1,4 +1,7 @@
+// app/api/purchase/callback/route.js
+
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
 export async function GET(req) {
@@ -8,11 +11,11 @@ export async function GET(req) {
 
     if (!reference) {
       return NextResponse.redirect(
-        "/user-dashboard/purchases?error=NoReference"
+        `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?error=NoReference`
       );
     }
 
-    // VERIFY PAYMENT
+    // 1️⃣ VERIFY PAYMENT WITH PAYSTACK
     const verify = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -26,25 +29,29 @@ export async function GET(req) {
 
     if (!result.status || result.data.status !== "success") {
       return NextResponse.redirect(
-        "/user-dashboard/purchases?error=PaymentFailed"
+        `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?error=PaymentFailed`
       );
     }
 
-    const { gameId, userId } = result.data.metadata;
+    // 2️⃣ Extract metadata
+    const gameId = result.data.metadata.gameId;
+    const userId = result.data.metadata.userId;
+    const amount = result.data.amount / 100;
 
-    if (!gameId || !userId) {
+    if (!userId) {
+      console.error("❌ Missing userId in metadata!");
       return NextResponse.redirect(
-        "/user-dashboard/purchases?error=BadMetadata"
+        `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?error=MissingUser`
       );
     }
 
-    // SAVE ORDER
+    // 3️⃣ Insert into orders
     const { data: order, error } = await supabaseAdmin
       .from("orders")
       .insert({
         user_id: userId,
         game_id: gameId,
-        amount: result.data.amount / 100,
+        amount,
         currency: "GHS",
         status: "paid",
         paystack_ref: reference,
@@ -53,17 +60,20 @@ export async function GET(req) {
       .single();
 
     if (error) {
-      console.error("Insert error:", error);
+      console.error("❌ Insert error:", error);
       return NextResponse.redirect(
-        "/user-dashboard/purchases?error=InsertFailed"
+        `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?error=DBError`
       );
     }
 
-    const successUrl = `/user-dashboard/purchases?success=1&orderId=${order.id}`;
-
-    return NextResponse.redirect(successUrl);
+    // 4️⃣ Redirect to My Purchases
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?success=1`
+    );
   } catch (err) {
-    console.error("Callback error:", err);
-    return NextResponse.redirect("/user-dashboard/purchases?error=ServerError");
+    console.error("🔥 CALLBACK SERVER ERROR:", err);
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/user-dashboard/purchases?error=ServerError`
+    );
   }
 }
