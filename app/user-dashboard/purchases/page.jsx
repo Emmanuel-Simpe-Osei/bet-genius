@@ -1,15 +1,25 @@
-//--------------------------------------------------------------
-// /user-dashboard/purchases
-// Shows all PAID orders for the logged-in user
-//--------------------------------------------------------------
+"use client";
 
 import Link from "next/link";
-import supabaseAdmin from "@/lib/supabaseAdmin";
-import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
+import toast from "react-hot-toast";
 
 const NAVY = "#0B1A4A";
 const GOLD = "#FFD601";
 
+// ------------------------------------------------------------------
+// SERVER COMPONENT DATA FETCHING MOVED ↓ (Wrapped inside client)
+// ------------------------------------------------------------------
+async function fetchPurchases() {
+  const res = await fetch("/api/user/purchases", {
+    cache: "no-store",
+  });
+
+  return await res.json();
+}
+
+// 🔁 Map game type
 function mapGameType(raw) {
   if (!raw) return "Free";
   const t = raw.toLowerCase();
@@ -29,78 +39,58 @@ function formatDate(value) {
   }
 }
 
-async function getUserPurchases() {
-  const supabase = await createSupabaseRouteClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function PurchasesPage() {
+  const searchParams = useSearchParams();
+  const success = searchParams.get("success");
+  const orderId = searchParams.get("orderId");
 
-  if (!user) {
-    return { user: null, purchases: [] };
-  }
+  const [purchases, setPurchases] = useState([]);
+  const scrollTargetRef = useRef(null);
 
-  // Fetch paid orders
-  const { data: orders, error: ordersError } = await supabaseAdmin
-    .from("orders")
-    .select(
-      "id, user_id, game_id, amount, currency, status, paystack_ref, created_at"
-    )
-    .eq("user_id", user.id)
-    .eq("status", "paid")
-    .order("created_at", { ascending: false });
+  // ---------------------------------------------------------------
+  // LOAD PURCHASES
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    (async () => {
+      const data = await fetchPurchases();
+      setPurchases(data.purchases || []);
+    })();
+  }, []);
 
-  if (ordersError) {
-    console.error("Error loading orders:", ordersError);
-    return { user, purchases: [] };
-  }
-
-  const gameIds = [...new Set(orders.map((o) => o.game_id).filter(Boolean))];
-
-  let gamesById = {};
-  if (gameIds.length > 0) {
-    const { data: games, error: gamesError } = await supabaseAdmin
-      .from("games")
-      .select(
-        "id, game_name, game_type, booking_code, total_odds, game_date, price"
-      )
-      .in("id", gameIds);
-
-    if (gamesError) {
-      console.error("Error loading games:", gamesError);
-    } else {
-      gamesById = (games || []).reduce((acc, g) => {
-        acc[g.id] = g;
-        return acc;
-      }, {});
+  // ---------------------------------------------------------------
+  // PLAY SUCCESS MESSAGE
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    if (success === "1") {
+      toast.success("Payment successful! Booking code unlocked.");
     }
-  }
+  }, [success]);
 
-  const purchases = orders.map((o) => {
-    const game = gamesById[o.game_id] || {};
-    const typeLabel = mapGameType(game.game_type);
+  // ---------------------------------------------------------------
+  // AUTO-SCROLL TO PURCHASED ITEM
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    if (!orderId || purchases.length === 0) return;
 
-    return {
-      id: o.id,
-      createdAt: o.created_at,
-      amount: o.amount,
-      currency: o.currency || "GHS",
-      status: o.status,
-      paystackRef: o.paystack_ref,
-      gameName: game.game_name || "Unknown Game",
-      gameType: typeLabel,
-      rawType: game.game_type,
-      bookingCode: game.booking_code || "Not available",
-      totalOdds: game.total_odds,
-      gameDate: game.game_date,
-    };
-  });
+    const element = document.getElementById(`order-${orderId}`);
+    if (element) {
+      setTimeout(() => {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 400);
+    }
+  }, [purchases, orderId]);
 
-  return { user, purchases };
-}
+  // ---------------------------------------------------------------
+  // COPY BOOKING CODE
+  // ---------------------------------------------------------------
+  const copyCode = (code) => {
+    navigator.clipboard.writeText(code);
+    toast.success("Booking code copied!");
+  };
 
-export default async function PurchasesPage() {
-  const { purchases } = await getUserPurchases();
-
+  // ---------------------------------------------------------------
+  // UI SECTION
+  // ---------------------------------------------------------------
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -145,16 +135,17 @@ export default async function PurchasesPage() {
           {purchases.map((p) => (
             <div
               key={p.id}
+              id={`order-${p.id}`}
               className="rounded-3xl bg-[#0F1E4D] border border-[#1c2b66] p-4 md:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
             >
               {/* Left */}
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs uppercase tracking-wide text-[#AFC3FF]">
-                    {p.gameType}
+                    {mapGameType(p.gameType)}
                   </span>
                   <span className="text-[10px] px-2 py-1 rounded-full bg-[#18285c] text-[#AFC3FF]">
-                    {p.status === "paid" ? "Paid" : p.status}
+                    Paid
                   </span>
                 </div>
 
@@ -165,14 +156,6 @@ export default async function PurchasesPage() {
                 <p className="mt-1 text-[11px] text-[#AFC3FF]">
                   Purchased:{" "}
                   <span className="font-medium">{formatDate(p.createdAt)}</span>
-                  {p.gameDate && (
-                    <>
-                      {" • "}Game Date:{" "}
-                      <span className="font-medium">
-                        {formatDate(p.gameDate)}
-                      </span>
-                    </>
-                  )}
                 </p>
 
                 {p.totalOdds && (
@@ -184,15 +167,22 @@ export default async function PurchasesPage() {
                   </p>
                 )}
 
-                <p className="mt-2 text-xs text-[#AFC3FF]">
-                  Booking Code:{" "}
+                {/* Booking Code + Copy Button */}
+                <div className="mt-2 text-xs text-[#AFC3FF] flex items-center gap-2">
+                  <span>Booking Code:</span>
                   <span
-                    className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-semibold"
+                    className="px-3 py-1 rounded-full text-[11px] font-semibold"
                     style={{ backgroundColor: GOLD, color: NAVY }}
                   >
                     {p.bookingCode}
                   </span>
-                </p>
+                  <button
+                    onClick={() => copyCode(p.bookingCode)}
+                    className="text-[10px] px-2 py-1 bg-[#1b2b66] text-white rounded hover:bg-[#24367a]"
+                  >
+                    Copy
+                  </button>
+                </div>
               </div>
 
               {/* Right */}
@@ -204,6 +194,7 @@ export default async function PurchasesPage() {
                 >
                   {p.currency} {Number(p.amount || 0).toLocaleString()}
                 </div>
+
                 {p.paystackRef && (
                   <div className="mt-1 text-[10px] text-[#AFC3FF]">
                     Ref:{" "}

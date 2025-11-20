@@ -6,35 +6,26 @@ export async function POST(req) {
   try {
     const { gameId } = await req.json();
 
-    if (!gameId) {
-      return NextResponse.json({ error: "Missing game ID" }, { status: 400 });
-    }
-
-    // 1️⃣ Get logged-in user
     const supabase = await createSupabaseRouteClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json(
-        { error: "You must be logged in." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // 2️⃣ Load game details
-    const { data: game, error: gameError } = await supabaseAdmin
+    // Fetch game
+    const { data: game } = await supabaseAdmin
       .from("games")
       .select("id, price, booking_code, game_name")
       .eq("id", gameId)
       .single();
 
-    if (gameError || !game) {
+    if (!game) {
       return NextResponse.json({ error: "Game not found" }, { status: 404 });
     }
 
-    // 3️⃣ Create Paystack session
     const paystackRes = await fetch(
       "https://api.paystack.co/transaction/initialize",
       {
@@ -44,13 +35,11 @@ export async function POST(req) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email: user.email, // user’s REAL email
+          email: user.email,
           amount: Math.round(Number(game.price) * 100),
           metadata: {
-            userId: user.id, // 🔥 REQUIRED
-            gameId: game.id, // 🔥 REQUIRED
-            booking_code: game.booking_code,
-            game_name: game.game_name,
+            gameId: game.id,
+            userId: user.id,
           },
           callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/purchase/callback`,
         }),
@@ -66,7 +55,6 @@ export async function POST(req) {
       );
     }
 
-    // 4️⃣ Return redirect URL
     return NextResponse.json({
       authorizationUrl: paystackJson.data.authorization_url,
     });

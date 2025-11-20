@@ -12,13 +12,12 @@ export async function GET(req) {
       );
     }
 
-    // VERIFY PAYMENT WITH PAYSTACK
+    // VERIFY PAYMENT
     const verify = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-          "Content-Type": "application/json",
         },
       }
     );
@@ -31,20 +30,38 @@ export async function GET(req) {
       );
     }
 
-    const gameId = result.data.metadata.gameId;
-    const userId = result.data.metadata.userId;
+    const { gameId, userId } = result.data.metadata;
+
+    if (!gameId || !userId) {
+      return NextResponse.redirect(
+        "/user-dashboard/purchases?error=BadMetadata"
+      );
+    }
 
     // SAVE ORDER
-    await supabaseAdmin.from("orders").insert({
-      user_id: userId,
-      game_id: gameId,
-      amount: result.data.amount / 100,
-      currency: "GHS",
-      status: "paid",
-      paystack_ref: reference,
-    });
+    const { data: order, error } = await supabaseAdmin
+      .from("orders")
+      .insert({
+        user_id: userId,
+        game_id: gameId,
+        amount: result.data.amount / 100,
+        currency: "GHS",
+        status: "paid",
+        paystack_ref: reference,
+      })
+      .select()
+      .single();
 
-    return NextResponse.redirect("/user-dashboard/purchases?success=1");
+    if (error) {
+      console.error("Insert error:", error);
+      return NextResponse.redirect(
+        "/user-dashboard/purchases?error=InsertFailed"
+      );
+    }
+
+    const successUrl = `/user-dashboard/purchases?success=1&orderId=${order.id}`;
+
+    return NextResponse.redirect(successUrl);
   } catch (err) {
     console.error("Callback error:", err);
     return NextResponse.redirect("/user-dashboard/purchases?error=ServerError");
