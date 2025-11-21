@@ -1,7 +1,7 @@
+// app/api/games/upload/route.js
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
-// 🚀 Upload a new game (Admin Only)
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -40,10 +40,16 @@ export async function POST(req) {
       );
     }
 
+    // 🛑 Ensure match_data is ARRAY
+    const safeMatchData =
+      typeof match_data === "string" ? JSON.parse(match_data) : match_data;
+
+    // 🛑 Cast numeric fields
+    const safeTotalOdds = Number(total_odds);
+    const safePrice = Number(price);
+
     // ----------------------------------------
     // 🚀 INSERT NEW GAME
-    // Status MUST be ACTIVE so users see the game
-    // archived_at MUST be null
     // ----------------------------------------
     const { data, error } = await supabaseAdmin
       .from("games")
@@ -52,12 +58,12 @@ export async function POST(req) {
           booking_code,
           game_type,
           game_name,
-          total_odds,
-          price,
-          match_data,
+          total_odds: safeTotalOdds,
+          price: safePrice,
+          match_data: safeMatchData,
           game_date,
 
-          // ⭐ ALWAYS make new games visible
+          // Ensure visible on user side
           status: "active",
           archived_at: null,
         },
@@ -66,7 +72,6 @@ export async function POST(req) {
       .single();
 
     if (error) {
-      console.error("UPLOAD GAME ERROR →", error);
       return NextResponse.json(
         { error: "Failed to upload game: " + error.message },
         { status: 500 }
@@ -75,7 +80,6 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, game: data }, { status: 200 });
   } catch (err) {
-    console.error("SERVER ERROR →", err);
     return NextResponse.json(
       { error: "Server error: " + err.message },
       { status: 500 }

@@ -7,6 +7,15 @@ import { motion, AnimatePresence } from "framer-motion";
 const NAVY = "#142B6F";
 const GOLD = "#FFD601";
 
+// Helper function to normalize match status
+const normalizeMatchStatus = (status) => {
+  if (!status) return "Pending";
+  const statusStr = String(status).toLowerCase();
+  if (statusStr === "won") return "Won";
+  if (statusStr === "lost") return "Lost";
+  return "Pending";
+};
+
 export default function GameCard({
   game,
   onStatusChange,
@@ -15,8 +24,21 @@ export default function GameCard({
   archivedMode = false,
 }) {
   const [editing, setEditing] = useState(false);
-  const [matches, setMatches] = useState(game.match_data || []);
-  const [originalMatches, setOriginalMatches] = useState(game.match_data || []);
+
+  // Initialize matches with normalized status
+  const [matches, setMatches] = useState(() =>
+    (game.match_data || []).map((match) => ({
+      ...match,
+      status: normalizeMatchStatus(match.status),
+    }))
+  );
+
+  const [originalMatches, setOriginalMatches] = useState(() =>
+    (game.match_data || []).map((match) => ({
+      ...match,
+      status: normalizeMatchStatus(match.status),
+    }))
+  );
 
   const [totalOdds, setTotalOdds] = useState(game.total_odds || 0);
   const [price, setPrice] = useState(game.price || 0);
@@ -26,14 +48,16 @@ export default function GameCard({
   const [deleting, setDeleting] = useState(false);
   const [mainStatus, setMainStatus] = useState(game.status || "active");
 
-  // NEW PURCHASE FLAG (using game.purchases)
+  // Archive states - SEPARATE from editing
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  // Purchase flag
   const [isPurchased, setIsPurchased] = useState(false);
 
   useEffect(() => {
     setIsPurchased((game.purchases || 0) > 0);
-  }, [game.purchases]);
-
-  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  }, [game.purchases, game.status]);
 
   // Game type options
   const gameTypes = [
@@ -45,12 +69,21 @@ export default function GameCard({
     { label: "Recovery", value: "recovery" },
   ];
 
-  // Backup before editing
+  // Sync with game prop changes
   useEffect(() => {
-    if (!archivedMode && editing) {
-      setOriginalMatches(JSON.parse(JSON.stringify(matches)));
+    if (!editing) {
+      const normalizedMatches = (game.match_data || []).map((match) => ({
+        ...match,
+        status: normalizeMatchStatus(match.status),
+      }));
+      setMatches(normalizedMatches);
+      setOriginalMatches(normalizedMatches);
+      setTotalOdds(game.total_odds || 0);
+      setPrice(game.price || 0);
+      setGameType(game.game_type || "free");
+      setMainStatus(game.status || "active");
     }
-  }, [editing, archivedMode]);
+  }, [game, editing]);
 
   // Handle match status changes
   const handleMatchStatusChange = (index, newStatus) => {
@@ -60,58 +93,74 @@ export default function GameCard({
       i === index ? { ...m, status: newStatus } : m
     );
     setMatches(updated);
-
-    const allResolved = updated.every((m) =>
-      ["won", "lost"].includes(m.status?.toLowerCase?.())
-    );
-
-    const hasPending = updated.some(
-      (m) => m.status?.toLowerCase?.() === "pending"
-    );
-
-    if (allResolved && !hasPending) {
-      setShowArchiveModal(true);
-    }
   };
 
-  // Confirm archive
-  const confirmArchive = async () => {
+  // Archive/Unarchive function
+  const handleArchiveToggle = () => {
+    setShowArchiveModal(true);
+  };
+
+  // Confirm archive/unarchive
+  const confirmArchiveToggle = async () => {
+    setArchiving(true);
     try {
+      const newStatus = mainStatus === "archived" ? "active" : "archived";
+
       const res = await fetch("/api/games/archive", {
         method: "POST",
-        body: JSON.stringify({ id: game.id }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: game.id,
+          status: newStatus,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      setMainStatus("archived");
-      showToast?.("Game archived successfully!", "success");
-      onStatusChange?.();
+      setMainStatus(newStatus);
+
+      const action = newStatus === "archived" ? "archived" : "unarchived";
+      showToast?.(`Game ${action} successfully!`, "success");
+
+      // Call onStatusChange to refresh the parent component's game list
+      if (onStatusChange) {
+        onStatusChange();
+      }
     } catch (err) {
-      showToast?.("Archive failed: " + err.message, "error");
+      showToast?.(`Operation failed: ${err.message}`, "error");
     } finally {
+      setArchiving(false);
       setShowArchiveModal(false);
     }
   };
 
-  const cancelArchive = () => {
-    setMatches(originalMatches);
-    showToast?.("Archive cancelled. Changes reverted.", "info");
+  const cancelArchiveToggle = () => {
     setShowArchiveModal(false);
   };
 
-  // Save
+  // Save with proper data formatting
   const saveChanges = async () => {
     if (archivedMode) return;
 
     setSaving(true);
     try {
+      // Ensure all match statuses are properly formatted
+      const formattedMatches = matches.map((match) => ({
+        ...match,
+        status: normalizeMatchStatus(match.status),
+      }));
+
       const res = await fetch("/api/games/update", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           id: game.id,
-          match_data: matches,
+          match_data: formattedMatches,
           total_odds: Number(totalOdds),
           price: Number(price),
           game_type: gameType,
@@ -121,20 +170,32 @@ export default function GameCard({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      showToast?.("Game updated", "success");
+      showToast?.("Game updated successfully!", "success");
       setEditing(false);
+
+      // Update local state with the response data
+      if (data.game) {
+        const normalizedMatches = (data.game.match_data || []).map((match) => ({
+          ...match,
+          status: normalizeMatchStatus(match.status),
+        }));
+        setMatches(normalizedMatches);
+        setOriginalMatches(normalizedMatches);
+      }
+
       onStatusChange?.();
     } catch (err) {
-      showToast?.("Failed: " + err.message, "error");
+      console.error("Save error:", err);
+      showToast?.("Failed to update game: " + err.message, "error");
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete
+  // Delete game
   const deleteGame = async () => {
     if (archivedMode) return;
-    if (!confirm("Delete this game?")) return;
+    if (!confirm("Are you sure you want to delete this game?")) return;
 
     setDeleting(true);
     try {
@@ -146,7 +207,7 @@ export default function GameCard({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      showToast?.("Game deleted", "success");
+      showToast?.("Game deleted successfully!", "success");
       onDelete?.();
     } catch (err) {
       showToast?.("Delete failed: " + err.message, "error");
@@ -155,33 +216,47 @@ export default function GameCard({
     }
   };
 
-  const statusColor = (s) =>
-    s === "Won"
+  const statusColor = (s) => {
+    const status = normalizeMatchStatus(s);
+    return status === "Won"
       ? "text-green-400"
-      : s === "Lost"
+      : status === "Lost"
       ? "text-red-400"
       : "text-white";
+  };
 
-  const statusIcon = (s) => (s === "Won" ? "✅" : s === "Lost" ? "❌" : "⏳");
+  const statusIcon = (s) => {
+    const status = normalizeMatchStatus(s);
+    return status === "Won" ? "✅" : status === "Lost" ? "❌" : "⏳";
+  };
 
   const statusCounts = matches.reduce(
-    (acc, m) => ({ ...acc, [m.status]: (acc[m.status] || 0) + 1 }),
+    (acc, m) => {
+      const status = normalizeMatchStatus(m.status);
+      return { ...acc, [status]: (acc[status] || 0) + 1 };
+    },
     { Won: 0, Lost: 0, Pending: 0 }
   );
 
   const getMatchKey = (m, i) =>
-    `${m.homeTeam}-${m.awayTeam}-${i}`.replace(/\s+/g, "-");
+    `${m.homeTeam}-${m.awayTeam}-${i}-${m.eventId || ""}`.replace(/\s+/g, "-");
 
-  // ---------------------------------------------------
-  // UI Rendering
-  // ---------------------------------------------------
+  // Don't render if the card is archived and we're not in archived mode, or vice versa
+  if (mainStatus === "archived" && !archivedMode) {
+    return null;
+  }
+
+  if (mainStatus !== "archived" && archivedMode) {
+    return null;
+  }
+
   return (
     <>
       <motion.div
         layout
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative rounded-2xl shadow-lg border"
+        className="relative rounded-2xl shadow-lg border overflow-hidden w-full max-w-md mx-auto"
         style={{
           backgroundColor: NAVY,
           color: "#fff",
@@ -190,93 +265,148 @@ export default function GameCard({
       >
         {/* PURCHASE TAG */}
         {isPurchased && (
-          <div className="absolute top-2 right-2 bg-green-600 text-white text-xs px-2 py-1 rounded">
+          <div className="absolute top-3 right-3 bg-green-600 text-white text-xs px-2 py-1 rounded z-10">
             Purchased ({game.purchases || 0})
           </div>
         )}
 
-        {/* HEADER */}
+        {/* ARCHIVED BANNER */}
+        {mainStatus === "archived" && (
+          <div className="absolute top-3 left-3 bg-purple-600 text-white text-xs px-2 py-1 rounded z-10">
+            Archived
+          </div>
+        )}
+
+        {/* HEADER SECTION */}
         <div className="p-4 border-b" style={{ borderColor: `${GOLD}33` }}>
           {!editing || archivedMode ? (
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="inline-block px-2 py-1 bg-[#FFD601] text-[#142B6F] rounded text-xs font-bold">
+            // DISPLAY MODE
+            <div className="flex justify-between items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="inline-block px-3 py-1 bg-[#FFD601] text-[#142B6F] rounded-full text-xs font-bold mb-2">
                   {String(gameType).toUpperCase()}
                 </div>
 
-                <div className="text-xs opacity-70 mt-1">
+                <div className="text-sm opacity-90 truncate">
                   Booking: {game.booking_code}
                 </div>
 
-                <div className="text-[10px] opacity-60 mt-1">
+                <div className="text-xs opacity-70 mt-1">
                   Purchases: {game.purchases || 0}
                 </div>
               </div>
 
-              <div className="text-right">
-                <div className="text-lg font-bold" style={{ color: GOLD }}>
-                  ₵{price}
+              <div className="text-right flex-shrink-0">
+                <div className="text-xl font-bold" style={{ color: GOLD }}>
+                  ₵{Number(price).toFixed(2)}
                 </div>
-                <div className="text-xs opacity-70">Odds: {totalOdds}</div>
+                <div className="text-sm opacity-80">
+                  Odds: {Number(totalOdds).toFixed(2)}
+                </div>
               </div>
             </div>
           ) : (
-            // EDITING MODE
-            <div className="grid grid-cols-2 gap-3">
-              <select
-                value={gameType}
-                onChange={(e) => setGameType(e.target.value)}
-                className="rounded-lg px-3 py-2 text-xs bg-[#1B2F7E] text-white border border-[#FFD601]/60"
-              >
-                {gameTypes.map((t) => (
-                  <option key={t.value} value={t.value} className="text-black">
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+            // EDITING MODE - HEADER
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs text-white/70 mb-1 block">
+                    Game Type
+                  </label>
+                  <select
+                    value={gameType}
+                    onChange={(e) => setGameType(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-[#1B2F7E] text-white border border-[#FFD601]/60 focus:border-[#FFD601] focus:outline-none"
+                  >
+                    {gameTypes.map((t) => (
+                      <option
+                        key={t.value}
+                        value={t.value}
+                        className="text-black"
+                      >
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <input
-                type="number"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="rounded-lg px-3 py-2 text-xs bg-[#1B2F7E] text-white border border-[#FFD601]/60"
-              />
+                <div>
+                  <label className="text-xs text-white/70 mb-1 block">
+                    Price (₵)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-[#1B2F7E] text-white border border-[#FFD601]/60 focus:border-[#FFD601] focus:outline-none"
+                  />
+                </div>
 
-              <input
-                type="number"
-                value={totalOdds}
-                onChange={(e) => setTotalOdds(e.target.value)}
-                className="rounded-lg px-3 py-2 text-xs bg-[#1B2F7E] text-white border border-[#FFD601]/60"
-              />
+                <div>
+                  <label className="text-xs text-white/70 mb-1 block">
+                    Total Odds
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={totalOdds}
+                    onChange={(e) => setTotalOdds(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-sm bg-[#1B2F7E] text-white border border-[#FFD601]/60 focus:border-[#FFD601] focus:outline-none"
+                  />
+                </div>
+              </div>
 
-              <input
-                readOnly
-                value={game.booking_code}
-                className="rounded-lg px-3 py-2 text-xs bg-[#1A2F7A] text-[#FFD601] border border-[#FFD601]/40 opacity-80"
-              />
+              <div>
+                <label className="text-xs text-white/70 mb-1 block">
+                  Booking Code
+                </label>
+                <input
+                  readOnly
+                  value={game.booking_code}
+                  className="w-full rounded-lg px-3 py-2 text-sm bg-[#1A2F7A] text-[#FFD601] border border-[#FFD601]/40 opacity-80 cursor-not-allowed"
+                />
+              </div>
             </div>
           )}
         </div>
 
         {/* STATUS BAR */}
         <div
-          className="px-4 py-2 flex justify-between text-xs border-b"
+          className="px-4 py-3 flex justify-between items-center border-b"
           style={{ borderColor: `${GOLD}22`, backgroundColor: "#1A308D" }}
         >
-          <div className="flex gap-4">
-            <span className="text-green-400">✅ {statusCounts.Won}</span>
-            <span className="text-red-400">❌ {statusCounts.Lost}</span>
-            <span>⏳ {statusCounts.Pending}</span>
+          <div className="flex gap-4 text-sm">
+            <span className="text-green-400 flex items-center gap-1">
+              ✅ {statusCounts.Won}
+            </span>
+            <span className="text-red-400 flex items-center gap-1">
+              ❌ {statusCounts.Lost}
+            </span>
+            <span className="text-white/80 flex items-center gap-1">
+              ⏳ {statusCounts.Pending}
+            </span>
           </div>
 
           {!archivedMode && !editing && (
-            <button
-              onClick={() => setEditing(true)}
-              className="px-3 py-1 rounded text-xs font-bold"
-              style={{ backgroundColor: GOLD, color: NAVY }}
-            >
-              Edit
-            </button>
+            <div className="flex items-center gap-2">
+              {/* ARCHIVE BUTTON - ALWAYS VISIBLE */}
+              <button
+                onClick={handleArchiveToggle}
+                disabled={archiving}
+                className="px-3 py-1 rounded text-xs font-medium border border-purple-400 text-purple-300 transition-colors hover:bg-purple-400/20 disabled:opacity-60"
+              >
+                {archiving ? "..." : "Archive"}
+              </button>
+
+              <button
+                onClick={() => setEditing(true)}
+                className="px-3 py-1 rounded text-xs font-bold transition-transform hover:scale-105 active:scale-95"
+                style={{ backgroundColor: GOLD, color: NAVY }}
+              >
+                Edit
+              </button>
+            </div>
           )}
 
           {editing && !archivedMode && (
@@ -284,7 +414,7 @@ export default function GameCard({
               <button
                 onClick={saveChanges}
                 disabled={saving}
-                className="px-3 py-1 rounded bg-green-600 text-white text-xs disabled:opacity-60"
+                className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium disabled:opacity-60 transition-colors hover:bg-green-700"
               >
                 {saving ? "Saving…" : "Save"}
               </button>
@@ -292,7 +422,7 @@ export default function GameCard({
               <button
                 onClick={deleteGame}
                 disabled={deleting}
-                className="px-3 py-1 rounded bg-red-600 text-white text-xs disabled:opacity-60"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-60 transition-colors hover:bg-red-700"
               >
                 {deleting ? "…" : "Delete"}
               </button>
@@ -302,116 +432,151 @@ export default function GameCard({
                   setEditing(false);
                   setMatches(originalMatches);
                 }}
-                className="px-3 py-1 rounded text-[#FFD601] border border-[#FFD601] text-xs"
+                className="px-4 py-2 rounded-lg text-[#FFD601] border border-[#FFD601] text-sm font-medium transition-colors hover:bg-[#FFD601]/10"
               >
                 Cancel
               </button>
             </div>
           )}
+
+          {archivedMode && !editing && (
+            <button
+              onClick={handleArchiveToggle}
+              disabled={archiving}
+              className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium disabled:opacity-60 transition-colors hover:bg-green-700"
+            >
+              {archiving ? "..." : "Unarchive"}
+            </button>
+          )}
         </div>
 
-        {/* MATCHES */}
-        <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+        {/* MATCHES SECTION */}
+        <div className="p-4 space-y-3 max-h-80 overflow-y-auto">
           {matches.length === 0 && (
-            <p className="text-xs text-white/70 text-center">
-              No match data found.
-            </p>
+            <div className="text-center py-6">
+              <p className="text-sm text-white/70">No match data found.</p>
+            </div>
           )}
 
           {matches.map((m, i) => (
             <div
               key={getMatchKey(m, i)}
-              className="flex justify-between items-center p-2 rounded bg-[#1A308D] border"
+              className="flex justify-between items-start p-3 rounded-lg bg-[#1A308D] border transition-colors hover:bg-[#1E38A0]"
               style={{ borderColor: `${GOLD}22` }}
             >
-              <div>
-                <p className="text-sm font-medium">
+              <div className="flex-1 min-w-0 mr-3">
+                <p className="text-sm font-medium truncate">
                   {m.homeTeam} vs {m.awayTeam}
                 </p>
-                {m.league && <p className="text-xs opacity-70">{m.league}</p>}
+                {m.league && (
+                  <p className="text-xs opacity-70 mt-1 truncate">{m.league}</p>
+                )}
+                {m.odds && (
+                  <p className="text-xs text-[#FFD601] mt-1">Odds: {m.odds}</p>
+                )}
               </div>
 
-              {archivedMode || !editing ? (
-                <span className={`text-lg ${statusColor(m.status)}`}>
-                  {statusIcon(m.status)}
-                </span>
-              ) : (
-                <select
-                  value={m.status}
-                  onChange={(e) => handleMatchStatusChange(i, e.target.value)}
-                  className="px-2 py-1 rounded bg-[#142B6F] text-white text-xs border border-[#FFD601]/40"
-                >
-                  <option>Pending</option>
-                  <option>Won</option>
-                  <option>Lost</option>
-                </select>
-              )}
+              <div className="flex-shrink-0">
+                {archivedMode || !editing ? (
+                  <span className={`text-lg ${statusColor(m.status)}`}>
+                    {statusIcon(m.status)}
+                  </span>
+                ) : (
+                  <select
+                    value={m.status}
+                    onChange={(e) => handleMatchStatusChange(i, e.target.value)}
+                    className="px-3 py-1 rounded bg-[#142B6F] text-white text-sm border border-[#FFD601]/40 focus:border-[#FFD601] focus:outline-none"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                  </select>
+                )}
+              </div>
             </div>
           ))}
         </div>
 
         {/* FOOTER */}
         <div
-          className="p-3 flex justify-between text-xs border-t"
-          style={{ borderColor: `${GOLD}22` }}
+          className="px-4 py-3 flex justify-between items-center border-t"
+          style={{ borderColor: `${GOLD}22`, backgroundColor: "#1A308D" }}
         >
-          <span>
+          <span className="text-sm text-white/70">
             {game.created_at
-              ? new Date(game.created_at).toLocaleDateString()
+              ? new Date(game.created_at).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
               : "Unknown date"}
           </span>
 
-          <span className="px-2 py-1 rounded capitalize bg-white/10">
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${
+              mainStatus === "archived"
+                ? "bg-purple-500/20 text-purple-300"
+                : mainStatus === "active"
+                ? "bg-green-500/20 text-green-300"
+                : "bg-gray-500/20 text-gray-300"
+            }`}
+          >
             {mainStatus}
           </span>
         </div>
       </motion.div>
 
-      {/* ARCHIVE MODAL */}
-      {!archivedMode && (
-        <AnimatePresence>
-          {showArchiveModal && (
+      {/* ARCHIVE/UNARCHIVE CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showArchiveModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          >
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.7, opacity: 0 }}
+              className="bg-[#142B6F] p-6 rounded-2xl border border-[#FFD601]/40 text-white w-full max-w-md"
             >
-              <motion.div
-                initial={{ scale: 0.7 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.7 }}
-                className="bg-[#142B6F] p-6 rounded-xl border border-[#FFD601]/40 text-white max-w-sm w-full"
-              >
-                <h3 className="text-lg font-bold text-[#FFD601] mb-3">
-                  Archive Game?
-                </h3>
+              <h3 className="text-xl font-bold text-[#FFD601] mb-3 text-center">
+                {mainStatus === "archived"
+                  ? "Unarchive Game?"
+                  : "Archive Game?"}
+              </h3>
 
-                <p className="text-sm mb-6">
-                  All matches are resolved. Do you want to move this game to the
-                  archive?
-                </p>
+              <p className="text-sm mb-6 text-center text-white/80">
+                {mainStatus === "archived"
+                  ? "This game will be moved back to the active games section. Are you sure you want to proceed?"
+                  : "This game will be moved to the archive section. Are you sure you want to proceed?"}
+              </p>
 
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={cancelArchive}
-                    className="px-4 py-2 text-sm border border-[#FFD601] text-[#FFD601] rounded"
-                  >
-                    No, cancel
-                  </button>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={cancelArchiveToggle}
+                  className="px-6 py-3 text-sm border-2 border-[#FFD601] text-[#FFD601] rounded-lg font-medium transition-colors hover:bg-[#FFD601]/10"
+                >
+                  Cancel
+                </button>
 
-                  <button
-                    onClick={confirmArchive}
-                    className="px-4 py-2 text-sm bg-[#FFD601] text-[#142B6F] rounded font-bold"
-                  >
-                    Yes, archive
-                  </button>
-                </div>
-              </motion.div>
+                <button
+                  onClick={confirmArchiveToggle}
+                  disabled={archiving}
+                  className="px-6 py-3 text-sm bg-[#FFD601] text-[#142B6F] rounded-lg font-bold transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
+                >
+                  {archiving
+                    ? "Processing..."
+                    : mainStatus === "archived"
+                    ? "Confirm Unarchive"
+                    : "Confirm Archive"}
+                </button>
+              </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
