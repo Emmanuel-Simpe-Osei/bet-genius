@@ -109,7 +109,7 @@ export default function HomePage() {
                   transition={{ duration: 1.5, ease: "easeInOut" }}
                   className="absolute inset-0 w-full h-full object-cover"
                 />
-              )
+              ),
           )}
         </AnimatePresence>
 
@@ -142,7 +142,7 @@ export default function HomePage() {
             className="flex gap-4 mt-8 flex-wrap justify-center"
           >
             <a
-              href="https://t.me/Ozopgh"
+              href="https://t.me/MortarSec"
               target="_blank"
               className="bg-[#FFD601] text-[#142B6F] px-6 py-3 rounded-xl font-semibold hover:bg-yellow-400 transition"
             >
@@ -152,7 +152,7 @@ export default function HomePage() {
               href="/predictions"
               className="border border-[#FFD601] text-[#FFD601] px-6 py-3 rounded-xl font-semibold hover:bg-[#FFD601] hover:text-[#142B6F] transition"
             >
-              Free games
+              Free predictions
             </Link>
           </motion.div>
         </div>

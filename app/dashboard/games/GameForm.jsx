@@ -156,7 +156,7 @@ export default function GameForm({ onGameAdded, showToast }) {
         {/* Booking Input */}
         <div>
           <label className="text-white text-sm font-semibold">
-            SportyBet Booking Code
+            Load Booking Code
           </label>
 
           <div className="flex flex-col sm:flex-row gap-3 mt-2">
