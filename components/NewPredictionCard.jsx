@@ -13,9 +13,9 @@ const NAVY = "#142B6F";
 // 233XXXXXXXXX format Moolre expects.
 function normalizePhone(input) {
   const digits = input.replace(/\D/g, "");
-  if (digits.startsWith("233")) return digits;
-  if (digits.startsWith("0")) return "233" + digits.slice(1);
-  return "233" + digits;
+  if (digits.startsWith("233")) return "0" + digits.slice(3);
+  if (digits.startsWith("0")) return digits;
+  return "0" + digits;
 }
 
 export default function NewPredictionCard({ game, isLoggedIn }) {
@@ -90,7 +90,7 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
           clearInterval(pollRef.current);
           setPhase("error");
           setPurchaseError(
-            "Still waiting for confirmation. Check your Purchases page shortly — it may complete a little after this."
+            "Still waiting for confirmation. Check your Purchases page shortly — it may complete a little after this.",
           );
         }
       } catch (err) {
@@ -283,7 +283,9 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
               exit={{ scale: 0.8, opacity: 0, y: 20 }}
               className="bg-gradient-to-br from-[#FFD601] to-[#FFE769] rounded-3xl max-w-md w-full p-8 text-center border-4 border-white shadow-2xl"
             >
-              <h3 className="text-3xl font-bold text-[#142B6F] mb-4">Hurray!</h3>
+              <h3 className="text-3xl font-bold text-[#142B6F] mb-4">
+                Hurray!
+              </h3>
               <p className="text-[#142B6F] text-xl mb-2 font-semibold">
                 Booking Code Copied!
               </p>
