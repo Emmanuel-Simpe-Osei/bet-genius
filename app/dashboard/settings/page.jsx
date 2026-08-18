@@ -11,7 +11,6 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState("");
 
-  // 🟢 Load all profiles
   useEffect(() => {
     const fetchProfiles = async () => {
       try {
@@ -32,7 +31,14 @@ export default function SettingsPage() {
     fetchProfiles();
   }, []);
 
-  // 🟡 Change current user's password
+  const refreshProfiles = async () => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setProfiles(data || []);
+  };
+
   const handlePasswordChange = async () => {
     if (!newPassword) return alert("Please enter a new password.");
 
@@ -49,57 +55,51 @@ export default function SettingsPage() {
     }
   };
 
-  // 👑 Promote a user to admin
+  // 👑 Promote a user to admin — now via the secured server route
   const handleAddAdmin = async () => {
     if (!newAdminEmail) return alert("Please enter a user's email address");
 
     try {
-      const normalizedEmail = newAdminEmail.trim().toLowerCase();
+      const res = await fetch("/api/admin/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newAdminEmail.trim() }),
+      });
 
-      // 1️⃣ Check if user exists (case-insensitive search)
-      const { data: userProfile, error: findError } = await supabase
-        .from("profiles")
-        .select("id, role, email")
-        .ilike("email", normalizedEmail)
-        .maybeSingle();
+      const data = await res.json();
 
-      if (findError) throw findError;
-
-      if (!userProfile) {
-        alert("❌ No user found with that email.");
+      if (!res.ok) {
+        alert("❌ " + (data.error || "Promotion failed."));
         return;
       }
 
-      // 2️⃣ Update their role to admin
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ role: "admin" })
-        .ilike("email", normalizedEmail);
-
-      if (updateError) throw updateError;
-
-      setMessage(`✅ ${normalizedEmail} has been promoted to admin!`);
+      setMessage(`✅ ${data.message || "User promoted to admin!"}`);
       setNewAdminEmail("");
-
-      // 3️⃣ Refresh profile list
-      const { data: updatedProfiles } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
-      setProfiles(updatedProfiles || []);
+      await refreshProfiles();
     } catch (err) {
       console.error("⚠️ Promote admin error:", err);
       setMessage("❌ Failed to promote user: " + err.message);
     }
   };
 
-  // 🔴 Delete a user from the profiles table
+  // 🔴 Delete a user entirely — profile + login, via the secured server route
   const handleDeleteUser = async (id) => {
-    if (!confirm("Are you sure you want to delete this user?")) return;
+    if (!confirm("This permanently deletes the user's profile and login. Continue?"))
+      return;
 
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", id);
-      if (error) throw error;
+      const res = await fetch("/api/admin/users/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage("❌ " + (data.error || "Failed to delete user"));
+        return;
+      }
 
       setProfiles((prev) => prev.filter((u) => u.id !== id));
       setMessage("🗑 User deleted successfully!");
@@ -108,7 +108,6 @@ export default function SettingsPage() {
     }
   };
 
-  // 🌀 Loading state
   if (loading)
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#142B6F] text-white">
@@ -116,10 +115,8 @@ export default function SettingsPage() {
       </div>
     );
 
-  // 🎨 UI
   return (
     <div className="min-h-screen bg-[#142B6F] text-white p-6 space-y-8">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -132,7 +129,6 @@ export default function SettingsPage() {
         </p>
       </motion.div>
 
-      {/* ✅ Alert Box */}
       {message && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -150,7 +146,6 @@ export default function SettingsPage() {
         </motion.div>
       )}
 
-      {/* 🔐 Change Password */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -177,7 +172,6 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
-      {/* 👑 Promote User to Admin */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -204,7 +198,6 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
-      {/* 🗂 Manage Users */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -226,7 +219,7 @@ export default function SettingsPage() {
               >
                 <div>
                   <p className="font-semibold">
-                    {u.name || "Unnamed"}{" "}
+                    {u.full_name || "Unnamed"}{" "}
                     {u.role === "admin" && (
                       <span className="text-[#FFD601] text-sm">(Admin)</span>
                     )}

@@ -23,8 +23,8 @@ export async function POST(req) {
     const { data: user, error: findError } = await supabase
       .from("profiles")
       .select("id, email, role")
-      .eq("email", email)
-      .single();
+      .ilike("email", email.trim())
+      .maybeSingle();
 
     if (findError || !user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -40,7 +40,7 @@ export async function POST(req) {
     }
 
     return NextResponse.json({
-      message: `✅ ${email} promoted to admin successfully!`,
+      message: `✅ ${user.email} promoted to admin successfully!`,
     });
   } catch (err) {
     console.error("API error:", err);
