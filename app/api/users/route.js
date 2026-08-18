@@ -1,17 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin } from "@/lib/requireAdmin";
 
 export async function GET(req) {
-  // Validate Admin Key
-  const adminKey = req.headers.get("x-admin-key");
-
-  if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
-    return Response.json(
-      { error: "Unauthorized — invalid admin key" },
-      { status: 401 }
-    );
+  const admin = await requireAdmin();
+  if (!admin) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin Supabase Client (SERVICE ROLE)
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY

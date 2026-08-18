@@ -1,8 +1,14 @@
 // app/api/games/upload/route.js
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { requireAdmin } from "@/lib/requireAdmin";
 
 export async function POST(req) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
 
@@ -16,9 +22,6 @@ export async function POST(req) {
       game_date,
     } = body;
 
-    // ----------------------------------------
-    // 🛑 VALIDATION
-    // ----------------------------------------
     if (!booking_code) {
       return NextResponse.json(
         { error: "Booking code is required" },
@@ -40,17 +43,12 @@ export async function POST(req) {
       );
     }
 
-    // 🛑 Ensure match_data is ARRAY
     const safeMatchData =
       typeof match_data === "string" ? JSON.parse(match_data) : match_data;
 
-    // 🛑 Cast numeric fields
     const safeTotalOdds = Number(total_odds);
     const safePrice = Number(price);
 
-    // ----------------------------------------
-    // 🚀 INSERT NEW GAME
-    // ----------------------------------------
     const { data, error } = await supabaseAdmin
       .from("games")
       .insert([
@@ -62,8 +60,6 @@ export async function POST(req) {
           price: safePrice,
           match_data: safeMatchData,
           game_date,
-
-          // Ensure visible on user side
           status: "active",
           archived_at: null,
         },

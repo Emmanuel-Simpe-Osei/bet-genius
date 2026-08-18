@@ -1,18 +1,11 @@
 // app/api/admin/dashboard/route.js
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-// 🔐 Check admin header (server-side, uses private ADMIN_KEY)
-function isAdminRequest(request) {
-  const headerKey = request.headers.get("x-admin-key");
-  const adminKey = process.env.ADMIN_KEY;
-
-  // If you ever change ADMIN_KEY, just update .env – no code change needed
-  return !!headerKey && !!adminKey && headerKey === adminKey;
-}
+import { requireAdmin } from "@/lib/requireAdmin";
 
 export async function GET(request) {
-  if (!isAdminRequest(request)) {
+  const admin = await requireAdmin();
+  if (!admin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -22,14 +15,12 @@ export async function GET(request) {
   );
 
   try {
-    // ✅ 1. Total users
     const { count: totalUsers, error: usersError } = await supabaseAdmin
       .from("profiles")
       .select("*", { count: "exact", head: true });
 
     if (usersError) throw usersError;
 
-    // ✅ 2. Fetch all games (no booking codes needed here)
     const { data: allGames, error: gamesError } = await supabaseAdmin
       .from("games")
       .select("id, match_data, status, archived_at, created_at");
@@ -43,21 +34,18 @@ export async function GET(request) {
 
     const totalGames = allGames.length;
 
-    // Active games = at least one pending match in match_data
     const activeGames = allGames.filter((g) =>
       (g.match_data || []).some(
         (m) => m.status && m.status.toLowerCase() === "pending"
       )
     ).length;
 
-    // Archived (within last 3 days)
     const archivedGames = allGames.filter((g) => {
       if (g.status !== "archived") return false;
-      if (!g.archived_at) return true; // treat as "recently archived"
+      if (!g.archived_at) return true;
       return g.archived_at > threeDaysAgoIso;
     }).length;
 
-    // Auto-delete: archived more than 3 days ago
     const autoDeleteCandidates = allGames.filter((g) => {
       if (g.status !== "archived" || !g.archived_at) return false;
       return g.archived_at < threeDaysAgoIso;
@@ -74,21 +62,15 @@ export async function GET(request) {
 
       if (deleteError) {
         console.error("Auto-delete failed:", deleteError.message);
-      } else {
-        console.log(
-          `🗑️ Auto-deleted ${idsToDelete.length} archived games older than 3 days`
-        );
       }
     }
 
-    // ✅ 3. Total orders
     const { count: totalOrders, error: ordersError } = await supabaseAdmin
       .from("orders")
       .select("*", { count: "exact", head: true });
 
     if (ordersError) throw ordersError;
 
-    // ✅ 4. Recent orders (join profiles for display)
     const { data: recentOrders, error: recentError } = await supabaseAdmin
       .from("orders")
       .select(
@@ -100,10 +82,7 @@ export async function GET(request) {
         status,
         paystack_ref,
         created_at,
-        profiles (
-          full_name,
-          email
-        )
+        profiles ( full_name, email )
       `
       )
       .order("created_at", { ascending: false })
@@ -111,7 +90,6 @@ export async function GET(request) {
 
     if (recentError) throw recentError;
 
-    // ✅ Send only what the dashboard needs
     return NextResponse.json({
       totalUsers: totalUsers || 0,
       totalGames,

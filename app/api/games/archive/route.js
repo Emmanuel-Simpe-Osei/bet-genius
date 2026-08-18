@@ -1,8 +1,14 @@
 // app/api/games/archive/route.js
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { requireAdmin } from "@/lib/requireAdmin";
 
 export async function POST(req) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { id, status } = await req.json();
 
@@ -13,7 +19,6 @@ export async function POST(req) {
       );
     }
 
-    // Determine the target status (default to "archived" for backward compatibility)
     const targetStatus = status || "archived";
 
     if (!["archived", "active"].includes(targetStatus)) {
@@ -23,7 +28,6 @@ export async function POST(req) {
       );
     }
 
-    // 1. Fetch full game with match_data to preserve it
     const { data: game, error: fetchError } = await supabaseAdmin
       .from("games")
       .select("match_data, status")
@@ -32,21 +36,18 @@ export async function POST(req) {
 
     if (fetchError) throw fetchError;
 
-    // Prepare update data
     const updateData = {
       status: targetStatus,
       updated_at: new Date().toISOString(),
-      match_data: game.match_data, // IMPORTANT: ALWAYS PRESERVE MATCH_DATA
+      match_data: game.match_data,
     };
 
-    // Set or clear archived_at based on the target status
     if (targetStatus === "archived") {
       updateData.archived_at = new Date().toISOString();
     } else {
       updateData.archived_at = null;
     }
 
-    // 2. Update the game status
     const { data: updatedGame, error: updateError } = await supabaseAdmin
       .from("games")
       .update(updateData)

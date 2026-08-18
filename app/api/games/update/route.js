@@ -1,8 +1,8 @@
 // app/api/games/update/route.js
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { requireAdmin } from "@/lib/requireAdmin";
 
-// Helper function to normalize match status
 const normalizeMatchStatus = (status) => {
   if (!status) return "Pending";
   const statusStr = String(status).toLowerCase();
@@ -12,16 +12,19 @@ const normalizeMatchStatus = (status) => {
 };
 
 export async function POST(req) {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
-
     const { id, match_data, total_odds, price, game_type } = body;
 
     if (!id) {
       return NextResponse.json({ error: "Game ID required" }, { status: 400 });
     }
 
-    // 🛑 Ensure match_data is properly formatted and normalized
     let safeMatchData;
     if (typeof match_data === "string") {
       safeMatchData = JSON.parse(match_data);
@@ -29,13 +32,11 @@ export async function POST(req) {
       safeMatchData = match_data;
     }
 
-    // Normalize all match statuses to ensure consistency
     safeMatchData = safeMatchData.map((match) => ({
       ...match,
       status: normalizeMatchStatus(match.status),
     }));
 
-    // 🛑 Cast number fields to numeric
     const safeTotalOdds = Number(total_odds) || 0;
     const safePrice = Number(price) || 0;
 

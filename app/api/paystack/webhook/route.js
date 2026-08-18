@@ -1,85 +1,58 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+
 export async function POST(req) {
-  try {
-    const body = await req.json();
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-paystack-signature");
 
-    // Paystack sends this signature header
-    const paystackSignature = req.headers.get("x-paystack-signature");
+  const expectedSignature = crypto
+    .createHmac("sha512", PAYSTACK_SECRET_KEY)
+    .update(rawBody)
+    .digest("hex");
 
-    if (!paystackSignature) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (signature !== expectedSignature) {
+    console.warn("Paystack webhook signature mismatch — rejecting");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
-    // Extract event
-    const event = body?.event;
-    const data = body?.data;
+  const event = JSON.parse(rawBody);
 
-    if (event !== "charge.success") {
+  if (event.event === "charge.success") {
+    const { reference, amount, metadata } = event.data;
+    const userId = metadata?.userId;
+    const gameId = metadata?.gameId;
+
+    if (!userId || !gameId) {
+      console.warn("Paystack webhook: missing metadata for", reference);
       return NextResponse.json({ received: true });
     }
 
-    const reference = data.reference;
-    const amount = data.amount / 100; // convert from pesewas
-    const email = data.customer.email;
-
-    // Extract metadata added during init
-    const gameId = data.metadata?.gameId;
-    const bookingCode = data.metadata?.booking_code;
-
-    if (!gameId) {
-      return NextResponse.json({ error: "Missing gameId" }, { status: 400 });
-    }
-
-    // Fetch user from email
-    const { data: userRow } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (!userRow) {
-      return NextResponse.json(
-        { error: "User not found for email " + email },
-        { status: 404 }
-      );
-    }
-
-    const userId = userRow.id;
-
-    // Prevent duplicates
+    // Idempotent: if this reference was already recorded (by the
+    // redirect callback, or a prior webhook retry), don't duplicate it.
     const { data: existing } = await supabaseAdmin
       .from("orders")
       .select("id")
       .eq("paystack_ref", reference)
       .maybeSingle();
 
-    if (existing) {
-      return NextResponse.json({ message: "Order already exists" });
-    }
-
-    // Insert order
-    const { error: insertError } = await supabaseAdmin.from("orders").insert([
-      {
+    if (!existing) {
+      const { error } = await supabaseAdmin.from("orders").insert({
         user_id: userId,
         game_id: gameId,
-        amount,
+        amount: (amount || 0) / 100,
         currency: "GHS",
         status: "paid",
         paystack_ref: reference,
-        booking_code: bookingCode,
-      },
-    ]);
+      });
 
-    if (insertError) throw insertError;
-
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("Webhook error:", err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+      if (error) {
+        console.error("Paystack webhook DB insert error:", error);
+      }
+    }
   }
-}
 
-// Do NOT cache this route
-export const dynamic = "force-dynamic";
+  return NextResponse.json({ received: true });
+}

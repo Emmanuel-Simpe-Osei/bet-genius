@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { requireAdmin } from "@/lib/requireAdmin";
 
 export async function GET() {
+  const admin = await requireAdmin();
+  if (!admin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    // Fetch games + count from the orders table
     const { data, error } = await supabaseAdmin
       .from("games")
       .select(
@@ -23,10 +28,8 @@ export async function GET() {
       `
       )
       .order("created_at", { ascending: false });
-
     if (error) throw error;
 
-    // Flatten into clean objects
     const games = (data || []).map((g) => ({
       id: g.id,
       game_name: g.game_name,
@@ -39,8 +42,6 @@ export async function GET() {
       created_at: g.created_at,
       updated_at: g.updated_at,
       archived_at: g.archived_at,
-
-      // 👇 purchase count from orders
       purchase_count: g.orders?.[0]?.count || 0,
     }));
 

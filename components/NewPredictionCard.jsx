@@ -1,7 +1,7 @@
 // components/NewPredictionCard.jsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,30 +9,11 @@ import { motion, AnimatePresence } from "framer-motion";
 const GOLD = "#FFD601";
 const NAVY = "#142B6F";
 
-// Converts a locally-entered number (e.g. 0244123456) into the
-// 233XXXXXXXXX format Moolre expects.
-function normalizePhone(input) {
-  const digits = input.replace(/\D/g, "");
-  if (digits.startsWith("233")) return "0" + digits.slice(3);
-  if (digits.startsWith("0")) return digits;
-  return "0" + digits;
-}
-
-export default function NewPredictionCard({ game, isLoggedIn }) {
+export default function NewPredictionCard({ game, isLoggedIn, userId, userEmail }) {
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
-
-  // ---- Moolre purchase flow state ----
-  const [showPurchase, setShowPurchase] = useState(false);
-  const [phase, setPhase] = useState("phone"); // phone | otp | waiting | success | error
-  const [phone, setPhone] = useState("");
-  const [channel, setChannel] = useState("13"); // 13=MTN, 6=Telecel, 7=AT
-  const [otpcode, setOtpcode] = useState("");
-  const [externalref, setExternalref] = useState(null);
-  const [purchaseError, setPurchaseError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const pollRef = useRef(null);
+  const [payLoading, setPayLoading] = useState(false);
 
   const {
     id,
@@ -48,61 +29,7 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
   const isFree = !price || Number(price) === 0;
   const isCustom = (rawType || "").toLowerCase().includes("custom");
 
-  function resetPurchaseState() {
-    setPhase("phone");
-    setPhone("");
-    setOtpcode("");
-    setExternalref(null);
-    setPurchaseError("");
-    setSubmitting(false);
-    if (pollRef.current) clearInterval(pollRef.current);
-  }
-
-  function closePurchaseModal() {
-    setShowPurchase(false);
-    resetPurchaseState();
-  }
-
-  // Polls /api/moolre/status until the payment resolves, as a fallback
-  // in case the webhook is delayed. Stops after ~60s either way.
-  function startPolling(ref) {
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts += 1;
-      try {
-        const res = await fetch("/api/moolre/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ externalref: ref }),
-        });
-        const data = await res.json();
-
-        if (data.status === "success") {
-          clearInterval(pollRef.current);
-          setPhase("success");
-          toast.success("Payment successful!");
-        } else if (data.status === "failed") {
-          clearInterval(pollRef.current);
-          setPhase("error");
-          setPurchaseError("Payment failed or was declined.");
-        } else if (attempts >= 20) {
-          // ~60s at 3s intervals
-          clearInterval(pollRef.current);
-          setPhase("error");
-          setPurchaseError(
-            "Still waiting for confirmation. Check your Purchases page shortly — it may complete a little after this.",
-          );
-        }
-      } catch (err) {
-        console.error("Status poll error:", err);
-      }
-    }, 3000);
-  }
-
-  // ------------------------------------------------------------
-  // HANDLE UNLOCK (PAID) — opens the purchase modal
-  // ------------------------------------------------------------
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     if (!isLoggedIn) {
       router.push("/login?next=/predictions");
       return;
@@ -113,112 +40,43 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
       return;
     }
 
-    resetPurchaseState();
-    setShowPurchase(true);
+    if (!userEmail || !userId) {
+      toast.error("Could not find your account details. Please re-login.");
+      return;
+    }
+
+    setPayLoading(true);
+
+    try {
+      const res = await fetch("/api/paystack/initialize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: userEmail,
+          amount: price,
+          metadata: {
+            userId,
+            gameId: id,
+          },
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || "Could not start payment.");
+        setPayLoading(false);
+        return;
+      }
+
+      window.location.href = data.authorization_url;
+    } catch (err) {
+      console.error("Paystack initialize error:", err);
+      toast.error("Something went wrong. Please try again.");
+      setPayLoading(false);
+    }
   };
 
-  // ------------------------------------------------------------
-  // SUBMIT PHONE — starts the Moolre payment prompt
-  // ------------------------------------------------------------
-  async function submitPhone(e) {
-    e.preventDefault();
-    if (!phone.trim()) {
-      setPurchaseError("Enter a mobile money number.");
-      return;
-    }
-
-    setSubmitting(true);
-    setPurchaseError("");
-
-    try {
-      const res = await fetch("/api/moolre/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameId: id,
-          phone: normalizePhone(phone),
-          channel,
-        }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setPurchaseError(data.error || "Failed to start payment.");
-        return;
-      }
-
-      if (data.status === "otp_required") {
-        setExternalref(data.externalref);
-        setPhase("otp");
-        toast.success("A verification code was sent via SMS.");
-        return;
-      }
-
-      if (data.status === "prompt_sent") {
-        setExternalref(data.externalref);
-        setPhase("waiting");
-        startPolling(data.externalref);
-        return;
-      }
-
-      setPurchaseError("Unexpected response — please try again.");
-    } catch (err) {
-      console.error("Moolre initiate error:", err);
-      setPurchaseError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // ------------------------------------------------------------
-  // SUBMIT OTP — completes the two-step Moolre verification
-  // ------------------------------------------------------------
-  async function submitOtp(e) {
-    e.preventDefault();
-    if (!otpcode.trim()) {
-      setPurchaseError("Enter the code sent to your phone.");
-      return;
-    }
-
-    setSubmitting(true);
-    setPurchaseError("");
-
-    try {
-      const res = await fetch("/api/moolre/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          externalref,
-          otpcode: otpcode.trim(),
-          phone: normalizePhone(phone),
-          channel,
-        }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setPurchaseError(data.error || "Verification failed.");
-        return;
-      }
-
-      if (data.status === "prompt_sent") {
-        setPhase("waiting");
-        startPolling(externalref);
-        return;
-      }
-
-      setPurchaseError("Unexpected response — please try again.");
-    } catch (err) {
-      console.error("Moolre OTP submit error:", err);
-      setPurchaseError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // ------------------------------------------------------------
-  // HANDLE FREE COPY WITH CELEBRATION
-  // ------------------------------------------------------------
   const handleFreeClick = () => {
     if (bookingCode) {
       navigator.clipboard
@@ -237,7 +95,6 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
 
   return (
     <>
-      {/* SLOT FULL MODAL */}
       <AnimatePresence>
         {showModal && (
           <motion.div
@@ -268,7 +125,6 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
         )}
       </AnimatePresence>
 
-      {/* CELEBRATION MODAL FOR FREE TIPS */}
       <AnimatePresence>
         {showCelebration && (
           <motion.div
@@ -308,174 +164,6 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
         )}
       </AnimatePresence>
 
-      {/* MOOLRE PURCHASE MODAL */}
-      <AnimatePresence>
-        {showPurchase && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#142B6F] to-[#1E3A8A] rounded-3xl max-w-md w-full p-8 border-2 border-[#FFD601] shadow-2xl"
-            >
-              {phase === "phone" && (
-                <form onSubmit={submitPhone}>
-                  <h3 className="text-xl font-bold text-white mb-1">
-                    Pay ₵{Number(price).toLocaleString()} via Mobile Money
-                  </h3>
-                  <p className="text-[#AFC3FF] text-sm mb-5">
-                    Enter your Mobile Money number to receive a payment prompt.
-                  </p>
-
-                  <label className="block text-xs text-[#AFC3FF] mb-1">
-                    Network
-                  </label>
-                  <select
-                    value={channel}
-                    onChange={(e) => setChannel(e.target.value)}
-                    className="w-full mb-4 p-3 rounded-xl bg-[#0F1E4D] text-white border border-[#2D4BA8]"
-                  >
-                    <option value="13">MTN</option>
-                    <option value="6">Telecel</option>
-                    <option value="7">AirtelTigo</option>
-                  </select>
-
-                  <label className="block text-xs text-[#AFC3FF] mb-1">
-                    Mobile Money Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="0244123456"
-                    className="w-full mb-4 p-3 rounded-xl bg-[#0F1E4D] text-white border border-[#2D4BA8]"
-                  />
-
-                  {purchaseError && (
-                    <p className="text-red-400 text-sm mb-3">{purchaseError}</p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full py-3 rounded-2xl font-bold text-[#142B6F] bg-gradient-to-r from-[#FFD601] to-[#FFE769] mb-2"
-                  >
-                    {submitting ? "Sending..." : "Send Payment Prompt"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePurchaseModal}
-                    className="w-full py-2 text-[#AFC3FF] text-sm"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
-
-              {phase === "otp" && (
-                <form onSubmit={submitOtp}>
-                  <h3 className="text-xl font-bold text-white mb-1">
-                    Verify Your Number
-                  </h3>
-                  <p className="text-[#AFC3FF] text-sm mb-5">
-                    Enter the code sent via SMS to {phone}.
-                  </p>
-
-                  <input
-                    type="text"
-                    value={otpcode}
-                    onChange={(e) => setOtpcode(e.target.value)}
-                    placeholder="Enter code"
-                    className="w-full mb-4 p-3 rounded-xl bg-[#0F1E4D] text-white border border-[#2D4BA8]"
-                  />
-
-                  {purchaseError && (
-                    <p className="text-red-400 text-sm mb-3">{purchaseError}</p>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full py-3 rounded-2xl font-bold text-[#142B6F] bg-gradient-to-r from-[#FFD601] to-[#FFE769] mb-2"
-                  >
-                    {submitting ? "Verifying..." : "Verify & Pay"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePurchaseModal}
-                    className="w-full py-2 text-[#AFC3FF] text-sm"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
-
-              {phase === "waiting" && (
-                <div className="text-center">
-                  <h3 className="text-xl font-bold text-white mb-3">
-                    Check Your Phone
-                  </h3>
-                  <p className="text-[#AFC3FF] text-sm mb-6">
-                    Approve the payment prompt on your phone to unlock this
-                    game. This page will update automatically.
-                  </p>
-                  <div className="w-10 h-10 mx-auto border-4 border-[#FFD601] border-t-transparent rounded-full animate-spin mb-6" />
-                  <button
-                    onClick={closePurchaseModal}
-                    className="w-full py-2 text-[#AFC3FF] text-sm"
-                  >
-                    Close (payment will still be processed)
-                  </button>
-                </div>
-              )}
-
-              {phase === "success" && (
-                <div className="text-center">
-                  <h3 className="text-2xl font-bold text-white mb-3">
-                    Payment Successful! 🎉
-                  </h3>
-                  <p className="text-[#AFC3FF] text-sm mb-6">
-                    Your booking code is ready in your purchases.
-                  </p>
-                  <button
-                    onClick={() => {
-                      closePurchaseModal();
-                      router.push("/user-dashboard/purchases");
-                    }}
-                    className="w-full py-3 rounded-2xl font-bold text-[#142B6F] bg-gradient-to-r from-[#FFD601] to-[#FFE769]"
-                  >
-                    View My Purchases
-                  </button>
-                </div>
-              )}
-
-              {phase === "error" && (
-                <div className="text-center">
-                  <h3 className="text-xl font-bold text-white mb-3">
-                    {purchaseError.includes("Still waiting")
-                      ? "Almost There"
-                      : "Payment Issue"}
-                  </h3>
-                  <p className="text-[#AFC3FF] text-sm mb-6">{purchaseError}</p>
-                  <button
-                    onClick={closePurchaseModal}
-                    className="w-full py-3 rounded-2xl font-bold text-[#142B6F] bg-gradient-to-r from-[#FFD601] to-[#FFE769]"
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* PREDICTION CARD */}
       <div className="rounded-3xl shadow-lg overflow-hidden bg-gradient-to-br from-[#142B6F] to-[#1E3A8A] text-white border border-[#2D4BA8] hover:border-[#FFD601]/30 transition-all duration-300 hover:shadow-xl">
         <div className="flex justify-between items-center px-6 pt-5 pb-1">
           <div className="flex flex-col gap-1">
@@ -554,7 +242,8 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
 
           <button
             onClick={isFree ? handleFreeClick : handleUnlock}
-            className="w-full py-3 rounded-2xl font-bold text-sm"
+            disabled={payLoading}
+            className="w-full py-3 rounded-2xl font-bold text-sm disabled:opacity-60"
             style={{
               backgroundColor: isFree ? "#1E3A8A" : GOLD,
               color: isFree ? GOLD : NAVY,
@@ -563,6 +252,8 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
           >
             {isFree
               ? "🎁 Get Free Tip"
+              : payLoading
+              ? "Redirecting to payment..."
               : `Unlock for ₵${Number(price).toLocaleString()}`}
           </button>
         </div>

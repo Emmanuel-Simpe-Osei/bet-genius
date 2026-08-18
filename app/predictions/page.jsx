@@ -113,7 +113,7 @@ export default async function PredictionsPage() {
         md:pt-40
       "
     >
-      <PredictionsClient games={games} isLoggedIn={isLoggedIn} />
+      <PredictionsClient games={games} isLoggedIn={isLoggedIn} userId={user?.id} userEmail={user?.email} />
     </main>
   );
 }

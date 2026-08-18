@@ -13,7 +13,7 @@ import NewPredictionCard from "@/components/NewPredictionCard";
 
 const GOLD = "#FFD601";
 
-export default function PredictionsClient({ games, isLoggedIn }) {
+export default function PredictionsClient({ games, isLoggedIn, userId, userEmail }) {
   const [dayFilter, setDayFilter] = useState("today");
   const [typeFilter, setTypeFilter] = useState("all");
 
@@ -123,6 +123,8 @@ export default function PredictionsClient({ games, isLoggedIn }) {
               key={game.id}
               game={game}
               isLoggedIn={isLoggedIn}
+              userId={userId}
+              userEmail={userEmail}
             />
           ))}
         </div>
