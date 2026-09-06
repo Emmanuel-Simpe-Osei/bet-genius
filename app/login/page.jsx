@@ -19,7 +19,7 @@ export default function LoginPage() {
         const { data: profile } = await supabase
           .from("profiles").select("role").eq("id", session.user.id).single();
         const role = profile?.role || "user";
-        window.location.href = role === "admin" ? "/dashboard" : "/user-dashboard";
+        window.location.href = role === "admin" ? "/dashboard" : "/predictions";
       }
     };
     checkAuth();
@@ -43,7 +43,7 @@ export default function LoginPage() {
       localStorage.setItem("userRole", role);
 
       setTimeout(() => {
-        window.location.href = role === "admin" ? "/dashboard" : "/user-dashboard";
+        window.location.href = role === "admin" ? "/dashboard" : "/predictions";
       }, 100);
     } catch (err) {
       setError(err.message);
