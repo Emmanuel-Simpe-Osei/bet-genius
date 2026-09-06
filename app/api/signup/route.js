@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 
 // 🟢 Use service role key — must be in .env
 const supabaseAdmin = createClient(
@@ -9,7 +10,22 @@ const supabaseAdmin = createClient(
 
 export async function POST(req) {
   try {
-    const { id, email, full_name, phone } = await req.json();
+    const { full_name, phone } = await req.json();
+
+    const supabase = await createSupabaseRouteClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
+    const id = user.id;
+    const email = user.email;
 
     // Check if profile exists
     const { data: existingProfile } = await supabaseAdmin
