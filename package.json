@@ -19,7 +19,8 @@
     "react": "19.1.0",
     "react-datepicker": "^8.8.0",
     "react-dom": "19.1.0",
-    "react-hot-toast": "^2.6.0"
+    "react-hot-toast": "^2.6.0",
+    "resend": "^6.26.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

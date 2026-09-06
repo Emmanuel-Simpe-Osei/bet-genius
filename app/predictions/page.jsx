@@ -1,40 +1,28 @@
 // app/predictions/page.jsx
 //--------------------------------------------------------------
-// SERVER COMPONENT (Next.js 15 compatible)
-// - Fetches active games from Supabase
-// - Masks game types
-// - Safely parses match_data
-// - Checks logged-in state via route client (must be awaited)
-// - Renders <PredictionsClient />
+// SERVER COMPONENT
+// No top padding here at all — the navbar is `sticky` (occupies its
+// own space in document flow), so content starts immediately after
+// it. Any spacing below the nav is handled inside PredictionsClient,
+// not here — having both add padding is what caused the large gap.
 //--------------------------------------------------------------
 
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 import PredictionsClient from "@/components/PredictionsClient";
 
-// ------------------------------------------------------------
-// Mask game types
-// ------------------------------------------------------------
 function mapGameType(raw) {
   if (!raw) return "Free";
-
   const t = raw.toLowerCase();
-
   if (t.includes("free")) return "Free";
   if (t.includes("vip")) return "VIP";
   if (t.includes("correct")) return "Correct Score";
-
   return raw;
 }
 
-// ------------------------------------------------------------
-// Safe JSON parsing for match_data
-// ------------------------------------------------------------
 function parseMatchData(value) {
   if (!value) return [];
-
   if (Array.isArray(value)) return value;
-
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
@@ -44,19 +32,13 @@ function parseMatchData(value) {
       return [];
     }
   }
-
   return [];
 }
 
-// ------------------------------------------------------------
-// Fetch active games
-// ------------------------------------------------------------
-async function getActiveGames() {
+async function getActiveGames(userId) {
   const { data, error } = await supabaseAdmin
     .from("games")
-    .select(
-      "id, game_name, game_type, total_odds, price, status, match_data, game_date, booking_code, created_at"
-    )
+    .select("id, game_name, game_type, total_odds, price, status, match_data, game_date, booking_code, created_at")
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
@@ -65,55 +47,40 @@ async function getActiveGames() {
     return [];
   }
 
+  let paidGameIds = new Set();
+  if (userId) {
+    const { data: paidOrders, error: ordersError } = await supabaseAdmin
+      .from("orders").select("game_id").eq("user_id", userId).eq("status", "paid");
+    if (ordersError) console.error("❌ Error loading paid orders:", ordersError);
+    else paidGameIds = new Set((paidOrders || []).map((o) => o.game_id));
+  }
+
   return (data || []).map((g) => {
     const rawType = g.game_type || "";
     const displayType = mapGameType(rawType);
+    const isFree = rawType.toLowerCase().includes("free");
+    const canRevealCode = isFree || paidGameIds.has(g.id);
 
     return {
-      id: g.id,
-      title: displayType,
-      displayType,
-      rawType,
+      id: g.id, title: displayType, displayType, rawType,
       gameName: g.game_name || displayType,
-      totalOdds: g.total_odds ?? null,
-      price: g.price ?? null,
-      status: g.status || "active",
-      matchData: parseMatchData(g.match_data),
-      bookingCode: g.booking_code || null,
-      gameDate: g.game_date || null,
-      createdAt: g.created_at || null,
+      totalOdds: g.total_odds ?? null, price: g.price ?? null,
+      status: g.status || "active", matchData: parseMatchData(g.match_data),
+      bookingCode: canRevealCode ? g.booking_code || null : null,
+      gameDate: g.game_date || null, createdAt: g.created_at || null,
     };
   });
 }
 
-// ------------------------------------------------------------
-// PAGE COMPONENT
-// ------------------------------------------------------------
 export default async function PredictionsPage() {
-  // Load games
-  const games = await getActiveGames();
-
-  // ✔ FIXED: must await the route client
   const supabase = await createSupabaseRouteClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   const isLoggedIn = !!user;
+  const games = await getActiveGames(user?.id);
 
   return (
-    <main
-      className="
-        min-h-screen
-        bg-[#0B1A4A]
-        pt-36
-        pb-16
-        px-4
-        md:pt-40
-      "
-    >
-      <PredictionsClient games={games} isLoggedIn={isLoggedIn} userId={user?.id} userEmail={user?.email} />
+    <main className="bg-bg">
+      <PredictionsClient games={games} isLoggedIn={isLoggedIn} />
     </main>
   );
 }

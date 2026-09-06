@@ -1,124 +1,77 @@
-// components/NewPredictionCard.jsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { Calendar, TrendingUp } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 
-const GOLD = "#FFD601";
-const NAVY = "#142B6F";
-
-export default function NewPredictionCard({ game, isLoggedIn, userId, userEmail }) {
+export default function NewPredictionCard({ game, isLoggedIn }) {
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [payLoading, setPayLoading] = useState(false);
 
-  const {
-    id,
-    title,
-    totalOdds,
-    price,
-    matchData,
-    bookingCode,
-    gameDate,
-    rawType,
-  } = game;
+  const [showPurchase, setShowPurchase] = useState(false);
+  const [phase, setPhase] = useState("form");
+  const [senderName, setSenderName] = useState("");
+  const [screenshot, setScreenshot] = useState(null);
+  const [momoDetails, setMomoDetails] = useState(null);
+  const [purchaseError, setPurchaseError] = useState("");
+
+  const { id, title, totalOdds, price, matchData, bookingCode, gameDate, rawType } = game;
 
   const isFree = !price || Number(price) === 0;
   const isCustom = (rawType || "").toLowerCase().includes("custom");
 
   const handleUnlock = async () => {
-    if (!isLoggedIn) {
-      router.push("/login?next=/predictions");
-      return;
-    }
+    if (!isLoggedIn) { router.push("/login?next=/predictions"); return; }
+    if (isCustom) { setShowModal(true); return; }
 
-    if (isCustom) {
-      setShowModal(true);
-      return;
-    }
-
-    if (!userEmail || !userId) {
-      toast.error("Could not find your account details. Please re-login.");
-      return;
-    }
-
-    setPayLoading(true);
-
+    setPhase("form"); setSenderName(""); setScreenshot(null); setPurchaseError("");
+    setShowPurchase(true);
     try {
-      const res = await fetch("/api/paystack/initialize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: userEmail,
-          amount: price,
-          metadata: {
-            userId,
-            gameId: id,
-          },
-        }),
-      });
+      const res = await fetch("/api/app-settings");
+      setMomoDetails(await res.json());
+    } catch (err) { console.error("Failed to load payment settings:", err); }
+  };
 
+  const closePurchaseModal = () => setShowPurchase(false);
+
+  const submitPayment = async (e) => {
+    e.preventDefault();
+    if (!senderName.trim()) { setPurchaseError("Enter the name on the MoMo account you paid from."); return; }
+    if (!screenshot) { setPurchaseError("Upload a screenshot of the payment."); return; }
+
+    setPhase("submitting"); setPurchaseError("");
+    try {
+      const formData = new FormData();
+      formData.append("gameId", id);
+      formData.append("senderName", senderName.trim());
+      formData.append("screenshot", screenshot);
+      const res = await fetch("/api/payment/submit", { method: "POST", body: formData });
       const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.error || "Could not start payment.");
-        setPayLoading(false);
-        return;
-      }
-
-      window.location.href = data.authorization_url;
+      if (!res.ok) { setPurchaseError(data.error || "Failed to submit payment proof."); setPhase("form"); return; }
+      setPhase("submitted");
     } catch (err) {
-      console.error("Paystack initialize error:", err);
-      toast.error("Something went wrong. Please try again.");
-      setPayLoading(false);
+      console.error("Payment submit error:", err);
+      setPurchaseError("Something went wrong. Please try again.");
+      setPhase("form");
     }
   };
 
-  const handleFreeClick = () => {
-    if (bookingCode) {
-      navigator.clipboard
-        ?.writeText(bookingCode)
-        .then(() => {
-          setShowCelebration(true);
-          setTimeout(() => setShowCelebration(false), 3000);
-        })
-        .catch(() => {});
-    }
-  };
-
-  const formattedDate = gameDate
-    ? new Date(gameDate).toLocaleDateString()
-    : "N/A";
+  const formattedDate = gameDate ? new Date(gameDate).toLocaleDateString() : "N/A";
 
   return (
     <>
       <AnimatePresence>
         {showModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 20 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-gradient-to-br from-[#142B6F] to-[#1E3A8A] rounded-3xl max-w-md w-full p-8 text-center border-2 border-[#FFD601] shadow-2xl"
-            >
-              <h3 className="text-2xl font-bold text-white mb-3">Slot Full</h3>
-              <p className="text-[#AFC3FF] text-lg mb-8 leading-relaxed">
-                Please wait for the next game drop
-              </p>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-full py-4 rounded-2xl font-bold text-lg text-[#142B6F] bg-gradient-to-r from-[#FFD601] to-[#FFE769]"
-              >
-                Got It
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-surface rounded-2xl max-w-md w-full p-8 text-center">
+              <h3 className="text-xl font-bold mb-3">Slot full</h3>
+              <p className="text-ink/60 mb-8">Please wait for the next game drop.</p>
+              <button onClick={() => setShowModal(false)} className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110">
+                Got it
               </button>
             </motion.div>
           </motion.div>
@@ -126,136 +79,136 @@ export default function NewPredictionCard({ game, isLoggedIn, userId, userEmail 
       </AnimatePresence>
 
       <AnimatePresence>
-        {showCelebration && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 20 }}
-              className="bg-gradient-to-br from-[#FFD601] to-[#FFE769] rounded-3xl max-w-md w-full p-8 text-center border-4 border-white shadow-2xl"
-            >
-              <h3 className="text-3xl font-bold text-[#142B6F] mb-4">
-                Hurray!
-              </h3>
-              <p className="text-[#142B6F] text-xl mb-2 font-semibold">
-                Booking Code Copied!
-              </p>
-              <div className="bg-white rounded-2xl p-4 mb-6 border-2 border-[#142B6F]">
-                <p className="text-xs text-[#AFC3FF] uppercase mb-1">
-                  Booking Code
-                </p>
-                <p className="text-2xl font-bold text-[#142B6F] font-mono tracking-wider">
-                  {bookingCode}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCelebration(false)}
-                className="w-full py-4 rounded-2xl font-bold text-lg text-white bg-gradient-to-r from-[#142B6F] to-[#1E3A8A]"
-              >
-                Let's Play! 🚀
-              </button>
+        {showPurchase && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-surface rounded-2xl max-w-md w-full p-8">
+              {phase === "form" && (
+                <form onSubmit={submitPayment}>
+                  <h3 className="text-lg font-bold mb-2">Pay ₵{Number(price).toLocaleString()} via Mobile Money</h3>
+                  <p className="text-ink/50 text-sm mb-6 leading-relaxed">Send payment to the number below, then upload proof here.</p>
+
+                  <div className="bg-surface2 rounded-xl p-5 mb-6 space-y-3">
+                    <p className="text-sm text-ink/60">Network: <span className="text-ink font-semibold">{momoDetails?.momo_network || "..."}</span></p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-ink/60">
+                        Number: <span className="text-accent font-mono font-semibold text-base">{momoDetails?.momo_number || "..."}</span>
+                      </p>
+                      <CopyButton value={momoDetails?.momo_number} label="Number copied!" size={15} />
+                    </div>
+                    <p className="text-sm text-ink/60">Account name: <span className="text-ink font-semibold">{momoDetails?.momo_account_name || "..."}</span></p>
+                  </div>
+
+                  <label className="block text-xs text-ink/60 mb-2">Name on the MoMo account you paid from</label>
+                  <input type="text" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Full name"
+                    className="w-full mb-5 min-h-[48px] px-4 rounded-xl bg-surface2 text-ink border border-ink/10 focus:outline-none focus:ring-2 focus:ring-accent/40" />
+
+                  <label className="block text-xs text-ink/60 mb-2">Payment screenshot</label>
+                  <input type="file" accept="image/*" onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
+                    className="w-full mb-6 text-sm text-ink/70 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-accent file:text-bg file:font-semibold" />
+
+                  {purchaseError && <p className="text-red-400 text-sm mb-4">{purchaseError}</p>}
+
+                  <button type="submit" className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110 mb-3">
+                    Submit for review
+                  </button>
+                  <button type="button" onClick={closePurchaseModal} className="w-full min-h-[44px] text-ink/50 text-sm">
+                    Cancel
+                  </button>
+                </form>
+              )}
+
+              {phase === "submitting" && (
+                <div className="text-center py-8">
+                  <div className="w-9 h-9 mx-auto border-4 border-accent border-t-transparent rounded-full animate-spin mb-5" />
+                  <p className="text-ink/60">Uploading...</p>
+                </div>
+              )}
+
+              {phase === "submitted" && (
+                <div className="text-center">
+                  <h3 className="text-xl font-bold mb-4">Submitted for review</h3>
+                  <p className="text-ink/60 text-sm mb-8 leading-relaxed">
+                    We'll verify your payment shortly. Once approved, your booking code will appear automatically in your dashboard.
+                  </p>
+                  <button onClick={() => { closePurchaseModal(); router.push("/user-dashboard/purchases"); }}
+                    className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110">
+                    View my purchases
+                  </button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="rounded-3xl shadow-lg overflow-hidden bg-gradient-to-br from-[#142B6F] to-[#1E3A8A] text-white border border-[#2D4BA8] hover:border-[#FFD601]/30 transition-all duration-300 hover:shadow-xl">
-        <div className="flex justify-between items-center px-6 pt-5 pb-1">
-          <div className="flex flex-col gap-1">
-            <span className="uppercase text-sm tracking-wide font-bold text-white">
-              {title || "Free"}
-            </span>
-            <span className="text-xs text-[#AFC3FF]">
-              Game Date:{" "}
-              <span className="font-semibold text-white">{formattedDate}</span>
-            </span>
-          </div>
-
-          <div className="text-right">
-            <span className="uppercase text-xs text-[#AFC3FF] block">
-              Price
-            </span>
-            {isFree ? (
-              <div
-                className="font-bold text-sm cursor-pointer"
-                style={{ color: GOLD }}
-                onClick={handleFreeClick}
-              >
-                {bookingCode || "FREE"}
-              </div>
-            ) : (
-              <span className="font-bold text-sm" style={{ color: GOLD }}>
-                ₵{Number(price).toLocaleString()}
+      {/* TICKET CARD */}
+      <div className="rounded-2xl overflow-hidden shadow-lg shadow-black/20">
+        <div className="bg-surface px-6 pt-6 pb-5">
+          <div className="flex justify-between items-start gap-3 mb-5">
+            <div>
+              <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-accent/15 text-accent mb-2">
+                {title || "Free"}
               </span>
-            )}
-            {totalOdds && (
-              <span className="block text-[10px] text-[#AFC3FF] mt-1">
-                Total Odds:{" "}
-                <span className="font-semibold text-white">
-                  {Number(totalOdds).toLocaleString()}
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 bg-[#0F1E4D]/80 rounded-xl mx-6 p-4 max-h-60 overflow-y-auto border border-[#1b2e6a]">
-          {(matchData || []).map((m, i) => (
-            <div
-              key={i}
-              className="flex justify-between items-center border-b border-[#1b2e6a] py-3 last:border-b-0 hover:bg-[#1b2e6a]/50 px-2 rounded-lg transition-colors"
-            >
-              <div className="text-xs flex-1">
-                <div className="font-medium text-white">
-                  {m.homeTeam} vs {m.awayTeam}
-                </div>
-                <div className="text-[10px] text-[#AFC3FF] mt-1">
-                  {m.marketDesc || ""}
-                </div>
-              </div>
-              <div className="text-[10px] font-semibold text-[#FFD601] bg-[#1b2e6a] px-2 py-1 rounded">
-                {m.status || ""}
+              <div className="flex items-center gap-1.5 text-xs text-ink/50">
+                <Calendar size={12} />
+                <span className="font-mono tabular-nums text-ink/70">{formattedDate}</span>
               </div>
             </div>
-          ))}
+            {totalOdds && (
+              <div className="text-right">
+                <div className="flex items-center gap-1 justify-end text-[10px] text-ink/40 mb-0.5">
+                  <TrendingUp size={11} /> TOTAL ODDS
+                </div>
+                <span className="font-mono tabular-nums font-bold text-ink text-lg">
+                  {Number(totalOdds).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </div>
 
-          {(!matchData || matchData.length === 0) && (
-            <p className="text-xs text-[#AFC3FF] text-center py-4">
-              No match data available.
-            </p>
-          )}
+          <div className="bg-surface2 rounded-xl px-4 py-1 max-h-52 overflow-y-auto">
+            {(matchData || []).map((m, i) => (
+              <div key={i} className="flex justify-between items-center border-b border-ink/5 py-3 last:border-b-0">
+                <div className="text-xs flex-1 min-w-0">
+                  <p className="font-medium text-ink truncate">{m.homeTeam} vs {m.awayTeam}</p>
+                  <p className="text-[10px] text-ink/40 mt-1 truncate">{m.marketDesc || ""}</p>
+                </div>
+                <span className="text-[10px] font-semibold text-accent bg-accent/10 px-2.5 py-1 rounded shrink-0 ml-3">
+                  {m.status || ""}
+                </span>
+              </div>
+            ))}
+            {(!matchData || matchData.length === 0) && (
+              <p className="text-xs text-ink/40 text-center py-5">No match data available.</p>
+            )}
+          </div>
         </div>
 
-        <div className="px-6 pt-4 pb-6">
-          <p className="text-xs text-[#AFC3FF] mb-3">
-            {isFree ? (
-              <>Click the golden code above to copy</>
-            ) : (
-              "Locked — purchase to reveal"
-            )}
-          </p>
+        <div className="relative h-0 bg-surface">
+          <div className="absolute left-0 right-0 top-0 border-t-2 border-dashed border-bg/40" />
+          <div className="ticket-notch ticket-notch--left" />
+          <div className="ticket-notch ticket-notch--right" />
+        </div>
 
-          <button
-            onClick={isFree ? handleFreeClick : handleUnlock}
-            disabled={payLoading}
-            className="w-full py-3 rounded-2xl font-bold text-sm disabled:opacity-60"
-            style={{
-              backgroundColor: isFree ? "#1E3A8A" : GOLD,
-              color: isFree ? GOLD : NAVY,
-              border: isFree ? `2px solid ${GOLD}` : "none",
-            }}
-          >
-            {isFree
-              ? "🎁 Get Free Tip"
-              : payLoading
-              ? "Redirecting to payment..."
-              : `Unlock for ₵${Number(price).toLocaleString()}`}
-          </button>
+        <div className="bg-surface2 px-6 py-5 flex items-center justify-between gap-3 flex-wrap">
+          {isFree ? (
+            <div className="flex items-center gap-3">
+              <span className="font-mono font-bold text-accent tracking-wider">{bookingCode || "FREE"}</span>
+              {bookingCode && <CopyButton value={bookingCode} label="Booking code copied!" />}
+            </div>
+          ) : (
+            <div>
+              <span className="text-[10px] text-ink/40 block mb-0.5">Price</span>
+              <span className="font-mono tabular-nums font-black text-accent text-lg">₵{Number(price).toLocaleString()}</span>
+            </div>
+          )}
+          {!isFree && (
+            <button onClick={handleUnlock} className="min-h-[48px] px-6 rounded-full font-semibold text-sm bg-accent text-bg hover:brightness-110 transition">
+              Unlock
+            </button>
+          )}
         </div>
       </div>
     </>

@@ -1,3 +1,34 @@
 @import "tailwindcss";
 
-/* Optional custom styles */
+/* ---- Geniuz Prediction design tokens ---- */
+@theme {
+  --color-bg: #04274F;
+  --color-surface: #0B3B73;
+  --color-surface2: #021B38;
+  --color-ink: #F8F8F8;
+  --color-accent: #FCCC00;
+  --color-accent-deep: #D9AD00;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+}
+
+/* Ticket perforation notches — used on prediction cards to fake a
+   punched hole where the ticket stub separates from the main body. */
+.ticket-notch {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: var(--color-bg);
+  border-radius: 9999px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ticket-notch--left {
+  left: -10px;
+}
+.ticket-notch--right {
+  right: -10px;
+}

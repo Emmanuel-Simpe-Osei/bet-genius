@@ -14,12 +14,11 @@ export async function GET() {
       return NextResponse.json({ purchases: [] });
     }
 
-    // Get all paid orders
     const { data: orders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("user_id", user.id)
-      .eq("status", "paid")
+      .in("status", ["paid", "pending_review", "rejected"])
       .order("created_at", { ascending: false });
 
     if (!orders || orders.length === 0) {
@@ -30,12 +29,11 @@ export async function GET() {
 
     const { data: games } = await supabaseAdmin
       .from("games")
-      .select("id, game_name, game_type, booking_code, total_odds, price")
+      .select("id, game_name, game_type, total_odds, price")
       .in("id", gameIds);
 
-    const gamesById = Object.fromEntries(games.map((g) => [g.id, g]));
+    const gamesById = Object.fromEntries((games || []).map((g) => [g.id, g]));
 
-    // Build final response
     const purchases = orders.map((o) => {
       const game = gamesById[o.game_id] || {};
 
@@ -45,11 +43,15 @@ export async function GET() {
         currency: o.currency,
         status: o.status,
         createdAt: o.created_at,
-        paystackRef: o.paystack_ref,
-        gameName: game.game_name || "Unknown Game",
-        gameType: game.game_type,
+        senderName: o.sender_name,
+        rejectionReason: o.rejection_reason,
+        gameName: o.game_name || game.game_name || "Unknown Game",
+        gameType: o.game_type || game.game_type,
         totalOdds: game.total_odds,
-        bookingCode: game.booking_code || "Unavailable",
+        // Only ever reveal the booking code once the order is actually
+        // paid, and only the snapshot stored on the order itself —
+        // never a live lookup that could leak an unpaid game's code.
+        bookingCode: o.status === "paid" ? o.booking_code || "Unavailable" : null,
       };
     });
 
