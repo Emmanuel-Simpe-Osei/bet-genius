@@ -59,10 +59,20 @@ export default function GameForm({ onGameAdded, showToast }) {
     try {
       const now = new Date().toISOString();
       const normalized = normalizeType(gameType);
+
+      // IMPORTANT: game_name is a display label shown in places that
+      // are NOT gated behind payment status (e.g. it used to be shown
+      // unconditionally on a customer's own purchases page before
+      // approval). It must NEVER contain the real booking_code — that
+      // secret only ever goes in the booking_code column, which every
+      // surface correctly checks before revealing. Use a random
+      // public-safe reference instead, unrelated to the real code.
+      const publicRef = Math.random().toString(36).slice(2, 8).toUpperCase();
+
       const payload = {
         booking_code: bookingCode.trim().toUpperCase(),
         game_type: normalized,
-        game_name: `${normalized.toUpperCase()} - ${bookingCode}`,
+        game_name: `${normalized.toUpperCase()} - ${publicRef}`,
         total_odds: Number(totalOdds), price: Number(price),
         status: "pending", match_data: matches, created_at: now, updated_at: now,
       };

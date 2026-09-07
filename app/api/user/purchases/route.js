@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabaseRouteClient";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
+function mapDisplayType(raw) {
+  const t = (raw || "").toLowerCase();
+  if (t.includes("vip")) return "VIP";
+  if (t.includes("correct")) return "Correct Score";
+  if (t.includes("recovery")) return "Recovery";
+  if (t.includes("free")) return "Free";
+  return "Prediction";
+}
+
 export async function GET() {
   try {
     const supabase = await createSupabaseRouteClient();
@@ -36,6 +45,8 @@ export async function GET() {
 
     const purchases = orders.map((o) => {
       const game = gamesById[o.game_id] || {};
+      const safeGameType = o.game_type || game.game_type;
+      const rawGameName = o.game_name || game.game_name || "Unknown Game";
 
       return {
         id: o.id,
@@ -45,12 +56,9 @@ export async function GET() {
         createdAt: o.created_at,
         senderName: o.sender_name,
         rejectionReason: o.rejection_reason,
-        gameName: o.game_name || game.game_name || "Unknown Game",
-        gameType: o.game_type || game.game_type,
+        gameName: o.status === "paid" ? rawGameName : `${mapDisplayType(safeGameType)} Prediction`,
+        gameType: safeGameType,
         totalOdds: game.total_odds,
-        // Only ever reveal the booking code once the order is actually
-        // paid, and only the snapshot stored on the order itself —
-        // never a live lookup that could leak an unpaid game's code.
         bookingCode: o.status === "paid" ? o.booking_code || "Unavailable" : null,
       };
     });
