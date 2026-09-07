@@ -132,7 +132,7 @@ export default function UserDashboardProfilePage() {
             value={profile.full_name}
             onChange={handleChange("full_name")}
             className="w-full bg-[#081237] border border-[#263777] rounded-xl px-3 py-2 text-sm text-white placeholder:text-[#6573aa] focus:outline-none focus:ring-2 focus:ring-[#FFD601]/70"
-            placeholder="e.g. Emmanuel Simpe Osei"
+            placeholder="e.g. Akufo Addo"
           />
         </div>
 
@@ -146,7 +146,7 @@ export default function UserDashboardProfilePage() {
             value={profile.username}
             onChange={handleChange("username")}
             className="w-full bg-[#081237] border border-[#263777] rounded-xl px-3 py-2 text-sm text-white placeholder:text-[#6573aa] focus:outline-none focus:ring-2 focus:ring-[#FFD601]/70"
-            placeholder="e.g. SimpeGeniuz"
+            placeholder="e.g. kofi_akufo"
           />
         </div>
 

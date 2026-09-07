@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import GameCard from "../games/GameCard";
 
@@ -22,10 +21,13 @@ export default function ArchivedPage() {
   const fetchArchivedGames = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("games").select("*")
-        .eq("status", "archived").order("archived_at", { ascending: false });
-      if (error) throw error;
-      setArchivedGames((data || []).map(normalizeGame));
+      const res = await fetch("/api/admin/games-with-purchases", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch games");
+      const data = await res.json();
+      const archived = (data || [])
+        .filter((g) => g.status === "archived")
+        .sort((a, b) => new Date(b.archived_at || 0) - new Date(a.archived_at || 0));
+      setArchivedGames(archived.map(normalizeGame));
     } catch (err) {
       console.error("Error fetching archived games:", err.message);
       setMessage("Failed to load archived games.");

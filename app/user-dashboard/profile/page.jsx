@@ -173,7 +173,7 @@ export default function UserDashboardProfilePage() {
             onChange={handleChange("full_name")}
             disabled={!isEditing}
             className="w-full bg-[#081237]/80 border border-[#263777]/50 rounded-2xl px-4 py-3.5 text-white placeholder:text-[#6573aa] focus:outline-none focus:ring-2 focus:ring-[#FFD601]/50 focus:border-transparent transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            placeholder="e.g. Emmanuel Simpe Osei"
+            placeholder="e.g. Akoffo Addo"
           />
         </div>
 
@@ -189,7 +189,7 @@ export default function UserDashboardProfilePage() {
             onChange={handleChange("username")}
             disabled={!isEditing}
             className="w-full bg-[#081237]/80 border border-[#263777]/50 rounded-2xl px-4 py-3.5 text-white placeholder:text-[#6573aa] focus:outline-none focus:ring-2 focus:ring-[#FFD601]/50 focus:border-transparent transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            placeholder="e.g. SimpeGeniuz"
+            placeholder="e.g. kofi_akufo"
           />
         </div>
 

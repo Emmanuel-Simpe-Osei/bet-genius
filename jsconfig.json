@@ -1,4 +1,7 @@
 {
+  "typeAcquisition": {
+    "enable": false
+  },
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
