@@ -26,18 +26,18 @@ export async function GET() {
   const selectCols =
     "id, user_id, game_id, amount, currency, status, sender_name, payment_proof_url, created_at, reviewed_at, rejection_reason, game_name, game_type, profiles ( full_name, email )";
 
+  // Newest submissions first, so a new payment always appears at the
+  // top of the queue instead of requiring a scroll to find it.
   const { data: pending, error: pendingError } = await supabaseAdmin
     .from("orders")
     .select(selectCols)
     .eq("status", "pending_review")
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (pendingError) {
     return NextResponse.json({ error: pendingError.message }, { status: 500 });
   }
 
-  // Reviewed orders that still have a screenshot on file — no time
-  // limit, just "not yet manually cleared" by the admin.
   const { data: recent, error: recentError } = await supabaseAdmin
     .from("orders")
     .select(selectCols)
