@@ -6,7 +6,17 @@ export async function GET(request, { params }) {
       `https://www.sportybet.com/api/ng/orders/share/${code}`,
       {
         headers: {
-          "User-Agent": "Mozilla/5.0",
+          // A bare "Mozilla/5.0" is an obvious bot signal — no real
+          // browser ever sends only that. A full, realistic header set
+          // (matching what an actual Chrome browser sends, including a
+          // Referer pointing at the real share page) is what usually
+          // gets past basic bot-protection like Cloudflare.
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+          Accept: "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
+          Referer: `https://www.sportybet.com/ng/share/${code}`,
+          Origin: "https://www.sportybet.com",
         },
         cache: "no-store",
       }
@@ -21,7 +31,6 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
 
-    // If SportyBet returns the structure you shared
     const matches =
       data?.data?.outcomes?.map((match) => ({
         eventId: match.eventId,
