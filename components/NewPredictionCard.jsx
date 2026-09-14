@@ -168,16 +168,13 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
             )}
           </div>
 
+          {/* Match list — just the fixtures themselves, nothing else.
+              No market description (e.g. "1X2"), no per-match status —
+              customers just need to see which matches make up the slip. */}
           <div className="bg-surface2 rounded-xl px-4 py-1 max-h-52 overflow-y-auto">
             {(matchData || []).map((m, i) => (
-              <div key={i} className="flex justify-between items-center border-b border-ink/5 py-3 last:border-b-0">
-                <div className="text-xs flex-1 min-w-0">
-                  <p className="font-medium text-ink truncate">{m.homeTeam} vs {m.awayTeam}</p>
-                  <p className="text-[10px] text-ink/40 mt-1 truncate">{m.marketDesc || ""}</p>
-                </div>
-                <span className="text-[10px] font-semibold text-accent bg-accent/10 px-2.5 py-1 rounded shrink-0 ml-3">
-                  {m.status || ""}
-                </span>
+              <div key={i} className="border-b border-ink/5 py-3 last:border-b-0">
+                <p className="text-xs font-medium text-ink truncate">{m.homeTeam} vs {m.awayTeam}</p>
               </div>
             ))}
             {(!matchData || matchData.length === 0) && (
