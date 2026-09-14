@@ -33,7 +33,10 @@ export default function GameForm({ onGameAdded, showToast }) {
       const data = await res.json();
       if (!data || !data.matches) throw new Error("No matches found");
 
-      const editable = data.matches.map((m) => ({ ...m, status: m.status || "Pending" }));
+      // Status must ALWAYS start as "Pending" here — it's exclusively
+      // an admin-set field via the dropdown below, never something
+      // pulled from SportyBet's own scraped data.
+      const editable = data.matches.map((m) => ({ ...m, status: "Pending" }));
       const calc = editable.reduce((acc, m) => {
         const n = parseFloat(m.odds);
         return acc * (isNaN(n) ? 1 : n);

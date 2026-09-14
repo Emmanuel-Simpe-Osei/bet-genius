@@ -1,16 +1,11 @@
 export async function GET(request, { params }) {
-  const { code } = params;
+  const { code } = await params;
 
   try {
     const response = await fetch(
       `https://www.sportybet.com/api/ng/orders/share/${code}`,
       {
         headers: {
-          // A bare "Mozilla/5.0" is an obvious bot signal — no real
-          // browser ever sends only that. A full, realistic header set
-          // (matching what an actual Chrome browser sends, including a
-          // Referer pointing at the real share page) is what usually
-          // gets past basic bot-protection like Cloudflare.
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
           Accept: "application/json, text/plain, */*",
@@ -31,14 +26,15 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
 
+    // Team names + odds come from SportyBet (odds feed the auto-total,
+    // which admin can still edit). Match status is deliberately
+    // excluded — that's exclusively admin-set, never scraped.
     const matches =
       data?.data?.outcomes?.map((match) => ({
         eventId: match.eventId,
         homeTeam: match.homeTeamName,
         awayTeam: match.awayTeamName,
-        status: match.matchStatus,
         odds: match.markets?.[0]?.outcomes?.[0]?.odds || "N/A",
-        marketDesc: match.markets?.[0]?.desc || "",
       })) || [];
 
     return Response.json({ matches });
