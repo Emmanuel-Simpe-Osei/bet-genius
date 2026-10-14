@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, TrendingUp } from "lucide-react";
+import { Calendar, TrendingUp, CreditCard } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
 
 export default function NewPredictionCard({ game, isLoggedIn }) {
@@ -17,6 +17,10 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
   const [momoDetails, setMomoDetails] = useState(null);
   const [purchaseError, setPurchaseError] = useState("");
 
+  const [payingOnline, setPayingOnline] = useState(false);
+  const [onlineError, setOnlineError] = useState("");
+  const [payPhone, setPayPhone] = useState("");
+
   const { id, title, totalOdds, price, matchData, bookingCode, gameDate, rawType } = game;
 
   const isFree = !price || Number(price) === 0;
@@ -26,7 +30,8 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
     if (!isLoggedIn) { router.push("/login?next=/predictions"); return; }
     if (isCustom) { setShowModal(true); return; }
 
-    setPhase("form"); setSenderName(""); setScreenshot(null); setPurchaseError("");
+    setPhase("form"); setSenderName(""); setScreenshot(null);
+    setPurchaseError(""); setOnlineError("");
     setShowPurchase(true);
     try {
       const res = await fetch("/api/app-settings");
@@ -35,6 +40,30 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
   };
 
   const closePurchaseModal = () => setShowPurchase(false);
+
+  const payOnline = async () => {
+    if (!payPhone.trim()) { setOnlineError("Enter your phone number, e.g. 0241234567."); return; }
+    setPayingOnline(true); setOnlineError("");
+    try {
+      const res = await fetch("/api/osem/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gameId: id, phone: payPhone }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.order_id) {
+        setOnlineError(data?.error || "Online payment is unavailable right now.");
+        setPayingOnline(false);
+        return;
+      }
+      // No payment_url means the customer approves a prompt on their phone.
+      window.location.href = data.payment_url || `/payment-complete?order=${data.order_id}&prompt=1`;
+    } catch (err) {
+      console.error("Online payment error:", err);
+      setOnlineError("Something went wrong. Please try again.");
+      setPayingOnline(false);
+    }
+  };
 
   const submitPayment = async (e) => {
     e.preventDefault();
@@ -83,40 +112,76 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-surface rounded-2xl max-w-md w-full p-8">
-              {phase === "form" && (
-                <form onSubmit={submitPayment}>
-                  <h3 className="text-lg font-bold mb-2">Pay ₵{Number(price).toLocaleString()} via Mobile Money</h3>
-                  <p className="text-ink/50 text-sm mb-6 leading-relaxed">Send payment to the number below, then upload proof here.</p>
+              className="bg-surface rounded-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto">
 
-                  <div className="bg-surface2 rounded-xl p-5 mb-6 space-y-3">
-                    <p className="text-sm text-ink/60">Network: <span className="text-ink font-semibold">{momoDetails?.momo_network || "..."}</span></p>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm text-ink/60">
-                        Number: <span className="text-accent font-mono font-semibold text-base">{momoDetails?.momo_number || "..."}</span>
-                      </p>
-                      <CopyButton value={momoDetails?.momo_number} label="Number copied!" size={15} />
+              {phase === "form" && (
+                <>
+                  <div className="mb-6">
+                    <h3 className="text-lg font-bold mb-2">
+                      Pay ₵{Number(price).toLocaleString()} online
+                    </h3>
+                    <p className="text-ink/50 text-sm mb-4 leading-relaxed">
+                      Card or Mobile Money. Instant confirmation.
+                    </p>
+
+                    <label className="block text-xs text-ink/60 mb-2">Phone number</label>
+                    <input type="tel" inputMode="numeric" value={payPhone} onChange={(e) => setPayPhone(e.target.value)} placeholder="0241234567"
+                      className="w-full mb-4 min-h-[48px] px-4 rounded-xl bg-surface2 text-ink border border-ink/10 focus:outline-none focus:ring-2 focus:ring-accent/40" />
+
+                    {onlineError && (
+                      <p className="text-red-400 text-sm mb-3">{onlineError}</p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={payOnline}
+                      disabled={payingOnline}
+                      className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110 disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      <CreditCard size={18} />
+                      {payingOnline ? "Opening checkout..." : "Pay online"}
+                    </button>
+
+                    <div className="flex items-center gap-3 my-6">
+                      <div className="flex-1 h-px bg-ink/10" />
+                      <span className="text-[11px] text-ink/40 uppercase tracking-wide">or</span>
+                      <div className="flex-1 h-px bg-ink/10" />
                     </div>
-                    <p className="text-sm text-ink/60">Account name: <span className="text-ink font-semibold">{momoDetails?.momo_account_name || "..."}</span></p>
                   </div>
 
-                  <label className="block text-xs text-ink/60 mb-2">Name on the MoMo account you paid from</label>
-                  <input type="text" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Full name"
-                    className="w-full mb-5 min-h-[48px] px-4 rounded-xl bg-surface2 text-ink border border-ink/10 focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                  <form onSubmit={submitPayment}>
+                    <h3 className="text-base font-bold mb-2">Pay ₵{Number(price).toLocaleString()} via Mobile Money</h3>
+                    <p className="text-ink/50 text-sm mb-6 leading-relaxed">Send payment to the number below, then upload proof here.</p>
 
-                  <label className="block text-xs text-ink/60 mb-2">Payment screenshot</label>
-                  <input type="file" accept="image/*" onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
-                    className="w-full mb-6 text-sm text-ink/70 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-accent file:text-bg file:font-semibold" />
+                    <div className="bg-surface2 rounded-xl p-5 mb-6 space-y-3">
+                      <p className="text-sm text-ink/60">Network: <span className="text-ink font-semibold">{momoDetails?.momo_network || "..."}</span></p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm text-ink/60">
+                          Number: <span className="text-accent font-mono font-semibold text-base">{momoDetails?.momo_number || "..."}</span>
+                        </p>
+                        <CopyButton value={momoDetails?.momo_number} label="Number copied!" size={15} />
+                      </div>
+                      <p className="text-sm text-ink/60">Account name: <span className="text-ink font-semibold">{momoDetails?.momo_account_name || "..."}</span></p>
+                    </div>
 
-                  {purchaseError && <p className="text-red-400 text-sm mb-4">{purchaseError}</p>}
+                    <label className="block text-xs text-ink/60 mb-2">Name on the MoMo account you paid from</label>
+                    <input type="text" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Full name"
+                      className="w-full mb-5 min-h-[48px] px-4 rounded-xl bg-surface2 text-ink border border-ink/10 focus:outline-none focus:ring-2 focus:ring-accent/40" />
 
-                  <button type="submit" className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110 mb-3">
-                    Submit for review
-                  </button>
-                  <button type="button" onClick={closePurchaseModal} className="w-full min-h-[44px] text-ink/50 text-sm">
-                    Cancel
-                  </button>
-                </form>
+                    <label className="block text-xs text-ink/60 mb-2">Payment screenshot</label>
+                    <input type="file" accept="image/*" onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
+                      className="w-full mb-6 text-sm text-ink/70 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-accent file:text-bg file:font-semibold" />
+
+                    {purchaseError && <p className="text-red-400 text-sm mb-4">{purchaseError}</p>}
+
+                    <button type="submit" className="w-full min-h-[48px] rounded-full font-semibold text-bg bg-accent hover:brightness-110 mb-3">
+                      Submit for review
+                    </button>
+                    <button type="button" onClick={closePurchaseModal} className="w-full min-h-[44px] text-ink/50 text-sm">
+                      Cancel
+                    </button>
+                  </form>
+                </>
               )}
 
               {phase === "submitting" && (
@@ -143,7 +208,6 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
         )}
       </AnimatePresence>
 
-      {/* TICKET CARD */}
       <div className="rounded-2xl overflow-hidden shadow-lg shadow-black/20">
         <div className="bg-surface px-6 pt-6 pb-5">
           <div className="flex justify-between items-start gap-3 mb-5">
@@ -168,10 +232,6 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
             )}
           </div>
 
-          {/* Match list — team names plus the admin-set status (Pending/
-              Won/Lost). No market description (e.g. "1X2") shown, since
-              that's noise customers don't need — but status is real,
-              manually-set information they do care about. */}
           <div className="bg-surface2 rounded-xl px-4 py-1 max-h-52 overflow-y-auto">
             {(matchData || []).map((m, i) => (
               <div key={i} className="flex justify-between items-center border-b border-ink/5 py-3 last:border-b-0">
