@@ -14,16 +14,7 @@ export default function DashboardLayout({ children }) {
 
   useEffect(() => setIsMobileMenuOpen(false), [pathname]);
 
-  useEffect(() => {
-    const checkAdminAccess = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) { router.push("/login"); return; }
-      const { data: profile } = await supabase
-        .from("profiles").select("role").eq("id", session.user.id).maybeSingle();
-      if (profile?.role !== "admin") router.push("/user-dashboard");
-    };
-    checkAdminAccess();
-  }, [router]);
+  // Admin access is enforced server-side in middleware.js
 
   const navItems = [
     { href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
