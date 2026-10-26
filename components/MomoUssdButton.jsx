@@ -14,18 +14,14 @@ import { useState } from "react";
 // {merchantNumber} is the number receiving the money (here a personal MoMo
 // number, so this uses the "Transfer Money > MoMo User" flow).
 //
-// THIS SEQUENCE IS A GUESS. Dial *170# by hand, note the menu numbers you
-// press, and update the steps below.
+// Tested on MTN Ghana (Oct 2026): *170 does NOT accept shortcuts. Both
+// *170*1# and *170*1*1# reply "Your choice was incorrect". So we only dial
+// *170# and the customer presses the menu steps themselves:
+//   1 Transfer Money > 1 MoMo User > number > confirm number > amount > reference > PIN
+// If MTN ever allows shortcuts, add the steps back here, e.g.
+//   "*170", "1", "1", "{merchantNumber}", "{merchantNumber}", "{amount}", "{reference}"
 // ============================================================================
-export const MOMO_USSD_STEPS = [
-  "*170",
-  "1", // e.g. "Transfer Money" (confirm on a real phone)
-  "1", // e.g. "MoMo User" (confirm on a real phone)
-  "{merchantNumber}",
-  "{merchantNumber}", // MTN asks you to confirm the number
-  "{amount}",
-  "{reference}",
-];
+export const MOMO_USSD_STEPS = ["*170"];
 
 // iPhones refuse to dial tel: links containing * or #, so USSD links can't work there.
 export function isIOS() {
