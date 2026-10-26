@@ -97,7 +97,8 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
     const { link } = buildMomoUssdLink({
       merchantNumber: String(momoDetails.momo_number).replace(/\D/g, ""),
       amount: Number(price),
-      reference: "BG" + String(id).replace(/[^a-zA-Z0-9]/g, "").slice(0, 6),
+      // USSD only accepts digits, so the reference must have no letters.
+      reference: String(id).replace(/\D/g, "").slice(0, 6) || "1",
     });
     window.location.href = link;
   };
