@@ -11,17 +11,30 @@ import { useState } from "react";
 // Placeholders, filled in at build time:
 //   {merchantNumber}  {amount}  {reference}
 //
+// {merchantNumber} is the number receiving the money (here a personal MoMo
+// number, so this uses the "Transfer Money > MoMo User" flow).
+//
 // THIS SEQUENCE IS A GUESS. Dial *170# by hand, note the menu numbers you
-// press to reach the merchant-pay screen, and update the steps below.
+// press, and update the steps below.
 // ============================================================================
 export const MOMO_USSD_STEPS = [
   "*170",
-  "2", // e.g. "MoMoPay & Pay Bill" (confirm on a real phone)
-  "1", // e.g. "MoMoPay" (confirm on a real phone)
+  "1", // e.g. "Transfer Money" (confirm on a real phone)
+  "1", // e.g. "MoMo User" (confirm on a real phone)
   "{merchantNumber}",
+  "{merchantNumber}", // MTN asks you to confirm the number
   "{amount}",
   "{reference}",
 ];
+
+// iPhones refuse to dial tel: links containing * or #, so USSD links can't work there.
+export function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
 
 // Default for encoding "*" as %2A in the tel: link. Some Android dialers need
 // it, others show "%2A" literally. The checkbox on the page can also flip it.

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, TrendingUp, CreditCard } from "lucide-react";
+import { Calendar, TrendingUp, CreditCard, Phone } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
+import { buildMomoUssdLink, isIOS } from "@/components/MomoUssdButton";
 
 export default function NewPredictionCard({ game, isLoggedIn }) {
   const router = useRouter();
@@ -20,6 +21,9 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
   const [payingOnline, setPayingOnline] = useState(false);
   const [onlineError, setOnlineError] = useState("");
   const [payPhone, setPayPhone] = useState("");
+  const [onIOS, setOnIOS] = useState(false);
+
+  useEffect(() => { setOnIOS(isIOS()); }, []);
 
   const { id, title, totalOdds, price, matchData, bookingCode, gameDate, rawType } = game;
 
@@ -87,7 +91,18 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
     }
   };
 
-  const formattedDate = gameDate ? new Date(gameDate).toLocaleDateString() : "N/A";
+  // Opens the phone dialer with the MTN MoMo USSD code filled in.
+  const dialMomo = () => {
+    if (!momoDetails?.momo_number) return;
+    const { link } = buildMomoUssdLink({
+      merchantNumber: String(momoDetails.momo_number).replace(/\D/g, ""),
+      amount: Number(price),
+      reference: "BG" + String(id).replace(/[^a-zA-Z0-9]/g, "").slice(0, 6),
+    });
+    window.location.href = link;
+  };
+
+  const formattedDate =gameDate ? new Date(gameDate).toLocaleDateString() : "N/A";
 
   return (
     <>
@@ -163,6 +178,22 @@ export default function NewPredictionCard({ game, isLoggedIn }) {
                       </div>
                       <p className="text-sm text-ink/60">Account name: <span className="text-ink font-semibold">{momoDetails?.momo_account_name || "..."}</span></p>
                     </div>
+
+                    {onIOS ? (
+                      <p className="text-ink/50 text-sm mb-6 leading-relaxed">
+                        Dial <span className="font-mono text-ink">*170#</span> on your phone to send the payment.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={dialMomo}
+                        disabled={!momoDetails?.momo_number}
+                        className="w-full min-h-[48px] mb-6 rounded-full font-semibold text-bg bg-accent hover:brightness-110 disabled:opacity-60 flex items-center justify-center gap-2"
+                      >
+                        <Phone size={18} />
+                        Pay with MoMo
+                      </button>
+                    )}
 
                     <label className="block text-xs text-ink/60 mb-2">Name on the MoMo account you paid from</label>
                     <input type="text" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Full name"
